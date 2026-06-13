@@ -1,0 +1,31 @@
+package com.vwholesale.product.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Data
+@TableName("products")
+public class Product {
+
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private Long merchantId;
+    private Long categoryId;
+    private String name;
+    private String aliases;
+    private String unit;
+    private String spec;
+    private BigDecimal defaultPrice;
+    private BigDecimal defaultPurchasePrice;
+    private String saleStatus;
+    @TableLogic
+    private Integer deleted;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+}

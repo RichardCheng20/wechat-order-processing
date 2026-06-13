@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: vegetable-wholesale-backend
+  profiles:
+    active: dev
+
+server:
+  port: 8080
+  address: 0.0.0.0
+  servlet:
+    context-path: /
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 2592000
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: false
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+app:
+  merchant:
+    default-id: 1
+  admin:
+    auto-upgrade-enabled: true
+    openid-whitelist: []
+  customer:
+    invite-code-expire-days: 7
+  wechat:
+    app-id: wx3988c400ac1e395b
+    app-secret: ${WECHAT_APP_SECRET:}

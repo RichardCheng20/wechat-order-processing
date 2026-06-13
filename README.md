@@ -1,0 +1,66 @@
+# 蔬菜批发微信小程序
+
+uni-app 前端 + Java Spring Boot 后端，替代纸单流程。
+
+## 项目结构
+
+```text
+docs/                  产品与技术文档
+backend/               Java 后端（Spring Boot + Sa-Token + Flyway）
+frontend/              uni-app 前端（Vue 3 + TS + uView Plus）
+vegetable-wholesale-app/ 已废弃（uni-app x 空壳）
+```
+
+## 本地环境要求
+
+| 工具 | 用途 | 当前状态 |
+|------|------|----------|
+| JDK 21 | 后端 | 已安装（需配置 JAVA_HOME） |
+| Maven 3.9+ | 后端构建 | 已安装 |
+| MySQL + Redis | 数据库/缓存 | 已通过 Homebrew 安装，需确认 MySQL 正常启动 |
+| Node.js 18+ | 前端 | 已有 |
+| 微信开发者工具 | 小程序预览 | 需安装 |
+| HBuilderX | 可选，运行前端 | 可选 |
+
+## 快速开始
+
+### 1. 基础设施
+
+**方式 A：Homebrew（当前机器）**
+
+```bash
+brew services start mysql redis
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS vwholesale; CREATE USER IF NOT EXISTS 'vwholesale'@'localhost' IDENTIFIED BY 'vwholesale'; GRANT ALL PRIVILEGES ON vwholesale.* TO 'vwholesale'@'localhost';"
+```
+
+**方式 B：Docker**
+
+```bash
+cd backend/docker && docker compose up -d
+```
+
+### 2. 后端
+
+```bash
+source backend/scripts/dev-env.sh
+cd backend
+mvn spring-boot:run
+```
+
+文档：http://localhost:8080/doc.html
+
+### 3. 前端
+
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev:mp-weixin
+```
+
+用微信开发者工具打开 `frontend/dist/dev/mp-weixin`。
+
+## 文档
+
+- [PRD](docs/vegetable-wholesale-miniapp-prd.md)
+- [技术架构](docs/technical-architecture.md)
+- [开工清单](docs/pre-development-checklist.md)

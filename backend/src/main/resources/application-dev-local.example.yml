@@ -1,0 +1,9 @@
+# 本地私密配置（勿提交 Git）
+# 复制此文件为 application-dev-local.yml 并填入真实值
+
+app:
+  wechat:
+    app-secret: cc276318e114d34931e2bc243bc0fd04
+  admin:
+    openid-whitelist:
+      - 在此填入你的openid
