@@ -64,7 +64,7 @@ public class OrderService {
         Map<Long, Product> productMap = loadProducts(items);
 
         String initialStatus = customer.getAutoConfirmOrder() != null && customer.getAutoConfirmOrder() == 1
-                ? OrderStatus.PENDING_PICK
+                ? OrderStatus.PENDING_PRICE
                 : OrderStatus.PENDING_CONFIRM;
 
         Order order = new Order();
@@ -102,15 +102,22 @@ public class OrderService {
         return listOrders(new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
                 .eq(Order::getCustomerId, customerId)
-                .orderByDesc(Order::getId));
+                .ne(Order::getStatus, OrderStatus.CANCELLED)
+                .orderByDesc(Order::getId))
+                .stream()
+                .map(this::maskPriceForCustomer)
+                .toList();
     }
 
-    public List<OrderVO> listForBoss(String status) {
+    public List<OrderVO> listForBoss(String status, Boolean pricingPending) {
         RoleChecker.requireBoss();
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
                 .orderByDesc(Order::getId);
-        if (StringUtils.hasText(status)) {
+        if (Boolean.TRUE.equals(pricingPending)) {
+            wrapper.in(Order::getStatus, OrderStatus.PENDING_CONFIRM, OrderStatus.PENDING_PICK, OrderStatus.PENDING_PRICE)
+                    .isNull(Order::getAmount);
+        } else if (StringUtils.hasText(status)) {
             wrapper.eq(Order::getStatus, status.trim());
         }
         return listOrders(wrapper);
@@ -119,7 +126,11 @@ public class OrderService {
     public OrderVO getDetail(Long id) {
         Order order = getOrderOrThrow(id);
         assertReadable(order);
-        return toDetailVO(order);
+        OrderVO vo = toDetailVO(order);
+        if (RoleChecker.currentCustomerId() != null) {
+            return maskPriceForCustomer(vo);
+        }
+        return vo;
     }
 
     @Transactional
@@ -129,7 +140,7 @@ public class OrderService {
         if (!OrderStatus.PENDING_CONFIRM.equals(order.getStatus())) {
             throw BusinessException.of(400, "只有待确认订单可以确认");
         }
-        order.setStatus(OrderStatus.PENDING_PICK);
+        order.setStatus(OrderStatus.PENDING_PRICE);
         orderMapper.updateById(order);
         return getDetail(id);
     }
@@ -146,7 +157,13 @@ public class OrderService {
         summary.put("todayTotal", (long) todayOrders.size());
         summary.put("pendingConfirm", todayOrders.stream().filter(o -> OrderStatus.PENDING_CONFIRM.equals(o.getStatus())).count());
         summary.put("pendingPick", todayOrders.stream().filter(o -> OrderStatus.PENDING_PICK.equals(o.getStatus())).count());
-        summary.put("pendingPrice", todayOrders.stream().filter(o -> OrderStatus.PENDING_PRICE.equals(o.getStatus())).count());
+        summary.put("pendingPrice", todayOrders.stream()
+                .filter(o -> o.getAmount() == null
+                        && (OrderStatus.PENDING_CONFIRM.equals(o.getStatus())
+                        || OrderStatus.PENDING_PICK.equals(o.getStatus())
+                        || OrderStatus.PENDING_PRICE.equals(o.getStatus())))
+                .count());
+        summary.put("pendingPublish", todayOrders.stream().filter(o -> OrderStatus.PRICED.equals(o.getStatus())).count());
         return summary;
     }
 
@@ -255,6 +272,7 @@ public class OrderService {
             case OrderStatus.DELIVERING -> "配送中";
             case OrderStatus.DELIVERED -> "已送达";
             case OrderStatus.PENDING_PRICE -> "待录价";
+            case OrderStatus.PRICED -> "待推送";
             case OrderStatus.COMPLETED -> "已完成";
             default -> status;
         };
@@ -317,6 +335,35 @@ public class OrderService {
             return;
         }
         RoleChecker.requireBoss();
+    }
+
+    private OrderVO maskPriceForCustomer(OrderVO vo) {
+        vo.setStatusLabel(customerStatusLabel(vo.getStatus()));
+        if (!OrderStatus.COMPLETED.equals(vo.getStatus())) {
+            vo.setAmount(null);
+            if (vo.getItems() != null) {
+                vo.getItems().forEach(item -> {
+                    item.setDealPrice(null);
+                    item.setSubtotalAmount(null);
+                });
+            }
+        }
+        return vo;
+    }
+
+    private String customerStatusLabel(String status) {
+        if (status == null) {
+            return "处理中";
+        }
+        return switch (status) {
+            case OrderStatus.PENDING_CONFIRM -> "待商家确认";
+            case OrderStatus.PENDING_PICK, OrderStatus.PICKING -> "备货中";
+            case OrderStatus.PICKED, OrderStatus.DELIVERING, OrderStatus.DELIVERED -> "配送中";
+            case OrderStatus.PENDING_PRICE, OrderStatus.PRICED -> "待确认账单";
+            case OrderStatus.COMPLETED -> "已完成";
+            case OrderStatus.CANCELLED -> "已取消";
+            default -> "处理中";
+        };
     }
 
     private String generateOrderNo() {

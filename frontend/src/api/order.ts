@@ -16,6 +16,7 @@ export interface OrderSummary {
   pendingConfirm: number
   pendingPick: number
   pendingPrice: number
+  pendingPublish?: number
 }
 
 export interface OrderInfo {
@@ -66,11 +67,14 @@ export function fetchBossOrderSummary() {
   })
 }
 
-export function fetchBossOrders(status?: string) {
+export function fetchBossOrders(options?: { status?: string; pricingPending?: boolean }) {
   return request<OrderInfo[]>({
     url: '/api/boss/orders',
     method: 'GET',
-    query: { status },
+    query: {
+      status: options?.status,
+      pricingPending: options?.pricingPending ? 1 : undefined,
+    },
   })
 }
 

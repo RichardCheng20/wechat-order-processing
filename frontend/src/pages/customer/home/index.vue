@@ -2,12 +2,13 @@
   <view class="page">
     <view class="banner">
       <view class="banner-top">
-        <text class="welcome">你好，{{ userStore.nickname || '客户' }}</text>
+        <text class="welcome">你好，{{ userStore.displayName }}</text>
         <view class="banner-actions">
           <text class="link" @tap="goOrders">我的订单</text>
           <text class="link" @tap="handleLogout">退出</text>
         </view>
       </view>
+      <text v-if="userStore.openid" class="dev-tag">{{ userStore.openid }}</text>
       <text class="hint">选品下单即可，价格由老板录价后确认</text>
     </view>
 
@@ -88,6 +89,7 @@
 <script setup lang="ts">
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { nextTick, ref } from 'vue'
+import { fetchBindStatus } from '../../../api/customer'
 import { fetchCustomerCategories, fetchCustomerProducts, type CategoryItem, type ProductItem } from '../../../api/product'
 import { useCartStore } from '../../../stores/cart'
 import { useUserStore } from '../../../stores/user'
@@ -112,8 +114,20 @@ onLoad(async () => {
     return
   }
   await nextTick()
+  await syncCustomerProfile()
   await refreshPage()
 })
+
+async function syncCustomerProfile() {
+  try {
+    const status = await fetchBindStatus()
+    if (status.bound && status.customerId) {
+      userStore.applyCustomerBind(status.customerId, status.customerName)
+    }
+  } catch {
+    // ignore
+  }
+}
 
 onShow(() => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
@@ -218,6 +232,13 @@ function handleLogout() {
 .link {
   font-size: 24rpx;
   opacity: 0.9;
+}
+
+.dev-tag {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  opacity: 0.75;
 }
 
 .hint {

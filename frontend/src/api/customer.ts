@@ -64,7 +64,7 @@ export function generateCustomerInvite(id: number) {
 }
 
 export function fetchBindStatus() {
-  return request<{ bound: boolean; customerId: number }>({
+  return request<{ bound: boolean; customerId: number; customerName?: string }>({
     url: '/api/customer/bind-status',
     method: 'GET',
   })

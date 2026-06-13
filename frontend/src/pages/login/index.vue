@@ -14,7 +14,9 @@
       <u-button class="dev-btn" text="老板登录" @click="loginAsOwner" />
       <u-button class="dev-btn" text="合伙人登录" @click="loginAsPartner" />
       <u-button class="dev-btn" text="工人登录" @click="loginAsWorker" />
-      <u-button class="dev-btn" text="客户登录" @click="loginAsCustomer" />
+      <u-button class="dev-btn" text="客户A（微信用户1）" @click="loginAsCustomerA" />
+      <u-button class="dev-btn" text="客户B（微信用户2）" @click="loginAsCustomerB" />
+      <u-button class="dev-btn" text="客户C（微信用户3）" @click="loginAsCustomerC" />
     </view>
   </view>
 </template>
@@ -72,8 +74,16 @@ function loginAsWorker() {
   devAs('dev-worker-001', '工人', 'WORKER')
 }
 
-function loginAsCustomer() {
-  devAs('dev-customer-001', '客户', 'CUSTOMER')
+function loginAsCustomerA() {
+  devAs('dev-customer-001', '微信用户1', 'CUSTOMER')
+}
+
+function loginAsCustomerB() {
+  devAs('dev-customer-002', '微信用户2', 'CUSTOMER')
+}
+
+function loginAsCustomerC() {
+  devAs('dev-customer-003', '微信用户3', 'CUSTOMER')
 }
 </script>
 

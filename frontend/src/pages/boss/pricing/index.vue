@@ -2,7 +2,7 @@
   <view class="page">
     <view class="header">
       <text class="title">待录价订单</text>
-      <text class="subtitle">按实际分拣数量录入成交单价，提交后自动计算订单金额</text>
+      <text class="subtitle">客户下单后即可录价；录价完成后推送给客户，客户才能看到订单金额</text>
     </view>
 
     <view v-if="loading" class="loading-wrap">

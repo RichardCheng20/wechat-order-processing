@@ -191,10 +191,16 @@ public class CustomerService {
                 customerId = user.getCustomerId();
             }
         }
-        return Map.of(
-                "bound", customerId != null,
-                "customerId", customerId != null ? customerId : 0
-        );
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("bound", customerId != null);
+        result.put("customerId", customerId != null ? customerId : 0);
+        if (customerId != null) {
+            Customer customer = customerMapper.selectById(customerId);
+            if (customer != null) {
+                result.put("customerName", customer.getName());
+            }
+        }
+        return result;
     }
 
     private Customer getCustomerOrThrow(Long id) {

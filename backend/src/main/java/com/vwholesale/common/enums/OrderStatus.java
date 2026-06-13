@@ -9,6 +9,7 @@ public final class OrderStatus {
     public static final String DELIVERING = "DELIVERING";
     public static final String DELIVERED = "DELIVERED";
     public static final String PENDING_PRICE = "PENDING_PRICE";
+    public static final String PRICED = "PRICED";
     public static final String COMPLETED = "COMPLETED";
     public static final String CANCELLED = "CANCELLED";
 

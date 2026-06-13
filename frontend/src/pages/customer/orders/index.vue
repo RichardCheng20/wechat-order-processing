@@ -23,6 +23,8 @@
           <u-tag :text="item.statusLabel" :type="statusType(item.status)" size="mini" />
         </view>
         <text class="meta">{{ formatTime(item.createdAt) }} · {{ item.itemCount || 0 }} 种商品</text>
+        <text v-if="item.amount != null" class="amount">合计 ¥{{ Number(item.amount).toFixed(2) }}</text>
+        <text v-else class="price-pending">金额待老板确认</text>
         <text v-if="item.remark" class="remark">备注：{{ item.remark }}</text>
       </view>
     </view>
@@ -31,8 +33,13 @@
       <text class="detail-title">订单明细</text>
       <view v-for="line in detail.items || []" :key="line.id" class="line-item">
         <text class="line-name">{{ line.productName }}</text>
-        <text class="line-qty">{{ line.orderQty }}{{ line.unit }}</text>
+        <view class="line-right">
+          <text class="line-qty">{{ line.orderQty }}{{ line.unit }}</text>
+          <text v-if="line.dealPrice != null" class="line-price">¥{{ Number(line.dealPrice).toFixed(2) }}</text>
+        </view>
       </view>
+      <text v-if="detail.amount != null" class="detail-total">订单总额 ¥{{ Number(detail.amount).toFixed(2) }}</text>
+      <text v-else class="price-pending detail-pending">金额待老板确认后展示</text>
     </view>
   </view>
 </template>
@@ -101,6 +108,7 @@ function selectOrder(e: { currentTarget: { dataset: { id?: string | number } } }
 function statusType(status: string) {
   if (status === 'PENDING_CONFIRM') return 'warning'
   if (status === 'PENDING_PICK' || status === 'PICKING') return 'primary'
+  if (status === 'PRICED' || status === 'PENDING_PRICE') return 'warning'
   if (status === 'COMPLETED') return 'success'
   return 'info'
 }
@@ -125,6 +133,26 @@ function goHome() {
 .empty-wrap {
   padding: 80rpx 0;
   text-align: center;
+}
+
+.amount {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.price-pending {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.detail-pending {
+  margin-top: 20rpx;
+  text-align: right;
 }
 
 .card {
@@ -181,12 +209,33 @@ function goHome() {
 .line-item {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 16rpx 0;
   border-bottom: 1rpx solid #f2f3f5;
   font-size: 28rpx;
 }
 
+.line-right {
+  text-align: right;
+}
+
 .line-qty {
+  display: block;
   color: #666;
+}
+
+.line-price {
+  display: block;
+  margin-top: 4rpx;
+  color: #e67e22;
+}
+
+.detail-total {
+  display: block;
+  margin-top: 20rpx;
+  text-align: right;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #27ae60;
 }
 </style>

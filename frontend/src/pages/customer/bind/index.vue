@@ -51,7 +51,7 @@ onShow(async () => {
   try {
     const status = await fetchBindStatus()
     if (status.bound && status.customerId) {
-      userStore.applyCustomerBind(status.customerId)
+      userStore.applyCustomerBind(status.customerId, status.customerName)
       uni.redirectTo({ url: '/pages/customer/home/index' })
     }
   } catch {
@@ -68,7 +68,7 @@ async function handleBind() {
   loading.value = true
   try {
     const customer = await bindCustomerByInvite(code)
-    userStore.applyCustomerBind(customer.id)
+    userStore.applyCustomerBind(customer.id, customer.name)
     uni.showToast({ title: '绑定成功', icon: 'success' })
     setTimeout(() => {
       uni.redirectTo({ url: '/pages/customer/home/index' })

@@ -49,3 +49,10 @@ export function submitOrderPricing(orderId: number, items: { itemId: number; dea
     data: { items },
   })
 }
+
+export function publishOrderPricing(orderId: number) {
+  return request<PricingOrder>({
+    url: `/api/boss/orders/${orderId}/publish`,
+    method: 'POST',
+  })
+}

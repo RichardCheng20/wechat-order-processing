@@ -36,6 +36,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderPricingService {
 
+    private static final Set<String> PRICEABLE_STATUSES = Set.of(
+            OrderStatus.PENDING_CONFIRM,
+            OrderStatus.PENDING_PICK,
+            OrderStatus.PENDING_PRICE
+    );
+
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final CustomerMapper customerMapper;
@@ -47,7 +53,17 @@ public class OrderPricingService {
         RoleChecker.requireBoss();
         List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
-                .eq(Order::getStatus, OrderStatus.PENDING_PRICE)
+                .in(Order::getStatus, PRICEABLE_STATUSES)
+                .isNull(Order::getAmount)
+                .orderByDesc(Order::getId));
+        return orders.stream().map(this::toListVO).toList();
+    }
+
+    public List<OrderPricingVO> listPricedUnpublished() {
+        RoleChecker.requireBoss();
+        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantContext.currentMerchantId())
+                .eq(Order::getStatus, OrderStatus.PRICED)
                 .orderByDesc(Order::getId));
         return orders.stream().map(this::toListVO).toList();
     }
@@ -55,9 +71,8 @@ public class OrderPricingService {
     public OrderPricingVO getPricingDetail(Long orderId) {
         RoleChecker.requireBoss();
         Order order = getOrderOrThrow(orderId);
-        if (!OrderStatus.PENDING_PRICE.equals(order.getStatus())
-                && !OrderStatus.COMPLETED.equals(order.getStatus())) {
-            throw BusinessException.of(400, "只有待录价或已完成订单可以查看录价详情");
+        if (!canViewPricing(order)) {
+            throw BusinessException.of(400, "当前订单状态不支持录价");
         }
         return toDetailVO(order);
     }
@@ -66,7 +81,7 @@ public class OrderPricingService {
     public OrderPricingVO submitPricing(Long orderId, OrderPricingSubmitRequest request) {
         RoleChecker.requireBoss();
         Order order = getOrderOrThrow(orderId);
-        if (!OrderStatus.PENDING_PRICE.equals(order.getStatus())) {
+        if (!PRICEABLE_STATUSES.contains(order.getStatus())) {
             throw BusinessException.of(400, "只有待录价订单可以提交录价");
         }
 
@@ -103,10 +118,31 @@ public class OrderPricingService {
 
         order.setAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
         order.setReceivableAmount(order.getAmount());
-        order.setStatus(OrderStatus.COMPLETED);
+        order.setStatus(OrderStatus.PRICED);
         orderMapper.updateById(order);
 
         return toDetailVO(order);
+    }
+
+    @Transactional
+    public OrderPricingVO publishToCustomer(Long orderId) {
+        RoleChecker.requireBoss();
+        Order order = getOrderOrThrow(orderId);
+        if (!OrderStatus.PRICED.equals(order.getStatus())) {
+            throw BusinessException.of(400, "只有已录价待推送的订单可以推送给客户");
+        }
+        if (order.getAmount() == null) {
+            throw BusinessException.of(400, "订单尚未录价，无法推送");
+        }
+        order.setStatus(OrderStatus.COMPLETED);
+        orderMapper.updateById(order);
+        return toDetailVO(order);
+    }
+
+    private boolean canViewPricing(Order order) {
+        return PRICEABLE_STATUSES.contains(order.getStatus())
+                || OrderStatus.PRICED.equals(order.getStatus())
+                || OrderStatus.COMPLETED.equals(order.getStatus());
     }
 
     private OrderPricingVO toListVO(Order order) {
@@ -189,8 +225,17 @@ public class OrderPricingService {
     }
 
     private String statusLabel(String status) {
+        if (Objects.equals(status, OrderStatus.PENDING_CONFIRM)) {
+            return "待确认";
+        }
+        if (Objects.equals(status, OrderStatus.PENDING_PICK)) {
+            return "待分拣";
+        }
         if (Objects.equals(status, OrderStatus.PENDING_PRICE)) {
             return "待录价";
+        }
+        if (Objects.equals(status, OrderStatus.PRICED)) {
+            return "待推送";
         }
         if (Objects.equals(status, OrderStatus.COMPLETED)) {
             return "已完成";

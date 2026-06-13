@@ -44,4 +44,10 @@ public class BossPricingController {
             @Valid @RequestBody OrderPricingSubmitRequest request) {
         return ApiResponse.ok(orderPricingService.submitPricing(id, request));
     }
+
+    @Operation(summary = "推送给客户")
+    @PostMapping("/orders/{id}/publish")
+    public ApiResponse<OrderPricingVO> publish(@PathVariable Long id) {
+        return ApiResponse.ok(orderPricingService.publishToCustomer(id));
+    }
 }

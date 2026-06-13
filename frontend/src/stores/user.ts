@@ -10,6 +10,8 @@ interface UserState {
   nickname: string
   merchantId: number | null
   customerId: number | null
+  customerName: string
+  openid: string
 }
 
 const PROFILE_KEY = 'user_profile'
@@ -19,12 +21,15 @@ function loadSavedProfile(): Partial<UserState> {
     const raw = uni.getStorageSync(PROFILE_KEY)
     if (!raw) return {}
     const data = JSON.parse(raw as string) as LoginResult
+    const profile = data as LoginResult & { customerName?: string }
     return {
       userId: data.userId ?? null,
       role: (data.role as UserRole) || '',
       nickname: data.nickname || '',
       merchantId: data.merchantId ?? null,
       customerId: data.customerId ?? null,
+      customerName: profile.customerName || '',
+      openid: data.openid || '',
     }
   } catch {
     return {}
@@ -58,10 +63,13 @@ export const useUserStore = defineStore('user', {
       nickname: saved.nickname || '',
       merchantId: saved.merchantId ?? null,
       customerId: saved.customerId ?? null,
+      customerName: saved.customerName ?? '',
+      openid: saved.openid ?? '',
     }
   },
 
   getters: {
+    displayName: (state) => state.customerName || state.nickname || '客户',
     isLoggedIn: (state) => !!state.token && !!state.role,
     isBoss: (state) => state.role === 'OWNER_ADMIN' || state.role === 'PARTNER_ADMIN',
     isCustomer: (state) => state.role === 'CUSTOMER',
@@ -76,6 +84,8 @@ export const useUserStore = defineStore('user', {
       this.nickname = data.nickname
       this.merchantId = data.merchantId
       this.customerId = data.customerId ?? null
+      this.customerName = (data as LoginResult & { customerName?: string }).customerName || ''
+      this.openid = data.openid || ''
       uni.setStorageSync('token', data.token)
       uni.setStorageSync(PROFILE_KEY, JSON.stringify(data))
     },
@@ -93,6 +103,8 @@ export const useUserStore = defineStore('user', {
       this.nickname = saved.nickname || ''
       this.merchantId = saved.merchantId ?? null
       this.customerId = saved.customerId ?? null
+      this.customerName = saved.customerName ?? ''
+      this.openid = saved.openid ?? ''
     },
 
     async loginWithWechat() {
@@ -125,12 +137,18 @@ export const useUserStore = defineStore('user', {
       uni.reLaunch({ url: '/pages/login/index' })
     },
 
-    applyCustomerBind(customerId: number) {
+    applyCustomerBind(customerId: number, customerName?: string) {
       this.customerId = customerId
+      if (customerName) {
+        this.customerName = customerName
+      }
       const raw = uni.getStorageSync(PROFILE_KEY)
       if (raw) {
-        const data = JSON.parse(raw as string) as LoginResult
+        const data = JSON.parse(raw as string) as LoginResult & { customerName?: string }
         data.customerId = customerId
+        if (customerName) {
+          data.customerName = customerName
+        }
         uni.setStorageSync(PROFILE_KEY, JSON.stringify(data))
       }
     },

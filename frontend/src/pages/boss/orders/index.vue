@@ -50,7 +50,7 @@
     </view>
 
     <view v-else class="list">
-      <view v-for="item in orders" :key="item.id" class="card">
+      <view v-for="item in orders" :key="item.id" class="card" @tap="goDetail" :data-id="item.id">
         <view class="card-top">
           <view>
             <text class="customer-name">{{ item.customerName }}</text>
@@ -58,10 +58,10 @@
           </view>
           <u-tag :text="item.statusLabel" :type="statusType(item.status)" size="mini" />
         </view>
-        <text class="meta">{{ item.deliveryAddressShort || '—' }} · {{ item.itemCount || 0 }} 种</text>
+        <text class="meta">{{ item.deliveryAddressShort || '—' }} · {{ item.itemCount || 0 }} 种 · 点击查看明细</text>
         <text v-if="item.assignedWorkerName" class="meta">工人：{{ item.assignedWorkerName }}</text>
         <text class="meta">{{ formatTime(item.createdAt) }}</text>
-        <view class="actions">
+        <view class="actions" @tap.stop>
           <u-button
             v-if="item.status === 'PENDING_CONFIRM'"
             size="small"
@@ -70,19 +70,26 @@
             @click="handleConfirm(item.id)"
           />
           <u-button
+            v-if="canPrice(item)"
+            size="small"
+            type="warning"
+            text="去录价"
+            @click="goPricingDetail(item.id)"
+          />
+          <u-button
+            v-if="item.status === 'PRICED'"
+            size="small"
+            type="success"
+            text="推送给客户"
+            @click="handlePublish(item.id)"
+          />
+          <u-button
             v-if="item.status === 'PENDING_PICK' || item.status === 'PICKING'"
             size="small"
             type="primary"
             plain
             :text="item.assignedWorkerName ? '改派工人' : '派单'"
             @click="openAssign(item.id)"
-          />
-          <u-button
-            v-if="item.status === 'PENDING_PRICE'"
-            size="small"
-            type="warning"
-            text="去录价"
-            @click="goPricingDetail(item.id)"
           />
         </view>
       </view>
@@ -110,12 +117,13 @@
 import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import { confirmBossOrder, fetchBossOrders, fetchBossOrderSummary, type OrderInfo } from '../../../api/order'
+import { publishOrderPricing } from '../../../api/pricing'
 import { assignOrderToWorker, fetchBossWorkers, type WorkerItem } from '../../../api/worker'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
 const orders = ref<OrderInfo[]>([])
-const summary = ref({ todayTotal: 0, pendingConfirm: 0, pendingPick: 0, pendingPrice: 0 })
+const summary = ref({ todayTotal: 0, pendingConfirm: 0, pendingPick: 0, pendingPrice: 0, pendingPublish: 0 })
 const workers = ref<WorkerItem[]>([])
 const loading = ref(false)
 const activeTab = ref('')
@@ -126,7 +134,8 @@ const tabs = [
   { label: '全部', value: '' },
   { label: '待确认', value: 'PENDING_CONFIRM' },
   { label: '待分拣', value: 'PENDING_PICK' },
-  { label: '待录价', value: 'PENDING_PRICE' },
+  { label: '待录价', value: 'PRICING_PENDING' },
+  { label: '待推送', value: 'PRICED' },
 ]
 
 onShow(async () => {
@@ -141,7 +150,9 @@ async function refresh() {
   loading.value = true
   try {
     summary.value = await fetchBossOrderSummary()
-    orders.value = await fetchBossOrders(activeTab.value || undefined)
+    orders.value = activeTab.value === 'PRICING_PENDING'
+      ? await fetchBossOrders({ pricingPending: true })
+      : await fetchBossOrders({ status: activeTab.value || undefined })
     workers.value = await fetchBossWorkers()
   } finally {
     loading.value = false
@@ -182,9 +193,29 @@ async function handleAssign(e: { currentTarget: { dataset: { id?: string | numbe
   }
 }
 
+function canPrice(item: OrderInfo) {
+  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PENDING_PRICE'].includes(item.status) && item.amount == null
+}
+
+function goDetail(e: { currentTarget: { dataset: { id?: string | number } } }) {
+  const id = Number(e.currentTarget.dataset.id)
+  uni.navigateTo({ url: `/pages/boss/orders/detail/index?id=${id}` })
+}
+
+async function handlePublish(id: number) {
+  try {
+    await publishOrderPricing(id)
+    uni.showToast({ title: '已推送给客户', icon: 'success' })
+    await refresh()
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '推送失败', icon: 'none' })
+  }
+}
+
 function statusType(status: string) {
   if (status === 'PENDING_CONFIRM') return 'warning'
   if (status === 'PENDING_PICK') return 'primary'
+  if (status === 'PRICED') return 'success'
   if (status === 'PENDING_PRICE') return 'warning'
   if (status === 'COMPLETED') return 'success'
   return 'info'

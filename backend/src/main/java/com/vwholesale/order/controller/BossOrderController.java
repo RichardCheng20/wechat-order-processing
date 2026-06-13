@@ -32,8 +32,10 @@ public class BossOrderController {
 
     @Operation(summary = "订单列表")
     @GetMapping("/orders")
-    public ApiResponse<List<OrderVO>> list(@RequestParam(required = false) String status) {
-        return ApiResponse.ok(orderService.listForBoss(status));
+    public ApiResponse<List<OrderVO>> list(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean pricingPending) {
+        return ApiResponse.ok(orderService.listForBoss(status, pricingPending));
     }
 
     @Operation(summary = "订单详情")
