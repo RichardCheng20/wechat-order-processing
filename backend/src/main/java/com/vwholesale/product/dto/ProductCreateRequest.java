@@ -17,6 +17,7 @@ public class ProductCreateRequest {
 
     private String aliases;
     private String unit = "斤";
+    private java.util.List<String> saleUnits;
     private String spec;
     private BigDecimal defaultPrice;
     private String saleStatus = "ON";

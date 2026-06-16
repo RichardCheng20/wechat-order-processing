@@ -42,15 +42,24 @@
 
       <view class="footer">
         <u-button
+          v-if="task.status === 'PENDING_PICK' || task.status === 'PICKING'"
+          type="primary"
+          text="一键完成分拣"
+          :loading="acting"
+          @click="handleCompletePick"
+        />
+        <u-button
           v-if="task.status === 'PENDING_PICK'"
           type="primary"
-          text="开始分拣"
+          plain
+          text="开始分拣（逐项核对）"
           :loading="acting"
           @click="handleStart"
         />
         <u-button
           v-if="task.status === 'PICKING'"
           type="primary"
+          plain
           text="标记已拣完"
           :loading="acting"
           @click="handlePicked"
@@ -71,6 +80,7 @@
 import { onLoad } from '@dcloudio/uni-app'
 import { reactive, ref } from 'vue'
 import {
+  completeWorkerTaskPick,
   fetchWorkerTaskDetail,
   markWorkerTaskDelivered,
   markWorkerTaskPicked,
@@ -109,6 +119,19 @@ async function loadTask() {
     uni.showToast({ title: e instanceof Error ? e.message : '加载失败', icon: 'none' })
   } finally {
     loading.value = false
+  }
+}
+
+async function handleCompletePick() {
+  acting.value = true
+  try {
+    task.value = await completeWorkerTaskPick(taskId.value)
+    uni.showToast({ title: '本单分拣已完成', icon: 'success' })
+    setTimeout(() => uni.navigateBack(), 500)
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '操作失败', icon: 'none' })
+  } finally {
+    acting.value = false
   }
 }
 

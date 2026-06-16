@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.vwholesale.common.config.AppProperties;
 import com.vwholesale.common.context.MerchantContext;
+import com.vwholesale.common.enums.OrderStatus;
 import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.customer.dto.CustomerBindRequest;
@@ -14,15 +15,18 @@ import com.vwholesale.customer.dto.InviteCodeVO;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
 import com.vwholesale.user.entity.User;
-import com.vwholesale.user.entity.User;
 import com.vwholesale.user.mapper.UserMapper;
+import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.entity.Order;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +39,7 @@ public class CustomerService {
 
     private final CustomerMapper customerMapper;
     private final UserMapper userMapper;
+    private final OrderMapper orderMapper;
     private final MerchantContext merchantContext;
     private final AppProperties appProperties;
 
@@ -50,12 +55,17 @@ public class CustomerService {
                     .or().like(Customer::getContactName, kw)
                     .or().like(Customer::getPhone, kw));
         }
-        return customerMapper.selectList(wrapper).stream().map(this::toVO).toList();
+        Map<Long, CustomerOrderStats> statsMap = loadOrderStats(merchantId);
+        return customerMapper.selectList(wrapper).stream()
+                .map(c -> toVO(c, statsMap.get(c.getId())))
+                .toList();
     }
 
     public CustomerVO getById(Long id) {
         RoleChecker.requireBoss();
-        return toVO(getCustomerOrThrow(id));
+        Customer customer = getCustomerOrThrow(id);
+        Map<Long, CustomerOrderStats> statsMap = loadOrderStats(merchantContext.currentMerchantId());
+        return toVO(customer, statsMap.get(customer.getId()));
     }
 
     @Transactional
@@ -76,7 +86,7 @@ public class CustomerService {
         customer.setRemark(request.getRemark());
         customer.setStatus(1);
         customerMapper.insert(customer);
-        return toVO(customer);
+        return toVO(customer, null);
     }
 
     @Transactional
@@ -117,7 +127,29 @@ public class CustomerService {
             customer.setStatus(request.getStatus());
         }
         customerMapper.updateById(customer);
-        return toVO(customer);
+        Map<Long, CustomerOrderStats> statsMap = loadOrderStats(merchantContext.currentMerchantId());
+        return toVO(customer, statsMap.get(customer.getId()));
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        RoleChecker.requireBoss();
+        Customer customer = getCustomerOrThrow(id);
+        Long orderCount = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getCustomerId, id)
+                .eq(Order::getMerchantId, merchantContext.currentMerchantId()));
+        if (orderCount != null && orderCount > 0) {
+            throw BusinessException.of(400, "该客户已有订单记录，无法删除");
+        }
+        if (customer.getBindUserId() != null) {
+            User user = userMapper.selectById(customer.getBindUserId());
+            if (user != null && id.equals(user.getCustomerId())) {
+                user.setCustomerId(null);
+                user.setStatus("PENDING_BIND");
+                userMapper.updateById(user);
+            }
+        }
+        customerMapper.deleteById(id);
     }
 
     @Transactional
@@ -179,7 +211,78 @@ public class CustomerService {
 
         StpUtil.getSession().set("customerId", customer.getId());
 
-        return toVO(customer);
+        return toVO(customer, null);
+    }
+
+    private Map<Long, CustomerOrderStats> loadOrderStats(Long merchantId) {
+        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantId)
+                .isNotNull(Order::getCustomerId)
+                .ne(Order::getStatus, OrderStatus.CANCELLED));
+        Map<Long, CustomerOrderStats> statsMap = new HashMap<>();
+        for (Order order : orders) {
+            if (order.getCustomerId() == null) {
+                continue;
+            }
+            CustomerOrderStats stats = statsMap.computeIfAbsent(order.getCustomerId(), id -> new CustomerOrderStats());
+            if (order.getCreatedAt() != null
+                    && (stats.lastOrderAt == null || order.getCreatedAt().isAfter(stats.lastOrderAt))) {
+                stats.lastOrderAt = order.getCreatedAt();
+            }
+            if (OrderStatus.COMPLETED.equals(order.getStatus())) {
+                BigDecimal outstanding = outstandingReceivable(order);
+                if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
+                    stats.outstandingAmount = stats.outstandingAmount.add(outstanding);
+                }
+            }
+        }
+        return statsMap;
+    }
+
+    private BigDecimal outstandingReceivable(Order order) {
+        BigDecimal receivable = order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
+        if (receivable == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+        return receivable.subtract(paid);
+    }
+
+    private static class CustomerOrderStats {
+        private BigDecimal outstandingAmount = BigDecimal.ZERO;
+        private LocalDateTime lastOrderAt;
+    }
+
+    private CustomerVO toVO(Customer customer) {
+        return toVO(customer, null);
+    }
+
+    private CustomerVO toVO(Customer customer, CustomerOrderStats stats) {
+        CustomerVO.CustomerVOBuilder builder = CustomerVO.builder()
+                .id(customer.getId())
+                .name(customer.getName())
+                .contactName(customer.getContactName())
+                .phone(customer.getPhone())
+                .address(customer.getAddress())
+                .addressShort(customer.getAddressShort())
+                .defaultDeliveryTime(customer.getDefaultDeliveryTime())
+                .settlementType(customer.getSettlementType())
+                .priceLevel(customer.getPriceLevel())
+                .autoConfirmOrder(customer.getAutoConfirmOrder() != null && customer.getAutoConfirmOrder() == 1)
+                .bindUserId(customer.getBindUserId())
+                .bindStatus(customer.getBindStatus())
+                .inviteCode(customer.getInviteCode())
+                .inviteExpiredAt(customer.getInviteExpiredAt())
+                .remark(customer.getRemark())
+                .status(customer.getStatus())
+                .createdAt(customer.getCreatedAt());
+        if (stats != null) {
+            builder.outstandingAmount(stats.outstandingAmount)
+                    .lastOrderAt(stats.lastOrderAt);
+        } else {
+            builder.outstandingAmount(BigDecimal.ZERO);
+        }
+        return builder.build();
     }
 
     public Map<String, Object> bindStatus() {
@@ -230,27 +333,5 @@ public class CustomerService {
             sb.append(INVITE_CHARS.charAt(RANDOM.nextInt(INVITE_CHARS.length())));
         }
         return sb.toString();
-    }
-
-    private CustomerVO toVO(Customer customer) {
-        return CustomerVO.builder()
-                .id(customer.getId())
-                .name(customer.getName())
-                .contactName(customer.getContactName())
-                .phone(customer.getPhone())
-                .address(customer.getAddress())
-                .addressShort(customer.getAddressShort())
-                .defaultDeliveryTime(customer.getDefaultDeliveryTime())
-                .settlementType(customer.getSettlementType())
-                .priceLevel(customer.getPriceLevel())
-                .autoConfirmOrder(customer.getAutoConfirmOrder() != null && customer.getAutoConfirmOrder() == 1)
-                .bindUserId(customer.getBindUserId())
-                .bindStatus(customer.getBindStatus())
-                .inviteCode(customer.getInviteCode())
-                .inviteExpiredAt(customer.getInviteExpiredAt())
-                .remark(customer.getRemark())
-                .status(customer.getStatus())
-                .createdAt(customer.getCreatedAt())
-                .build();
     }
 }

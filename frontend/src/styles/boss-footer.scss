@@ -1,0 +1,153 @@
+// 老板端统一底部操作栏
+@import './boss-ui.scss';
+
+.boss-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: $boss-bg;
+  box-sizing: border-box;
+}
+
+.boss-page-scroll {
+  flex: 1;
+  height: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+// 主内容区撑满剩余高度（配合固定底栏）。勿在此加 padding-bottom，否则会与底栏之间出现白条
+.boss-main-fill {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  box-sizing: border-box;
+}
+
+// 底栏占位：仅用于整页 scroll-view（勿与 .boss-scroll-with-footer 叠用）
+.boss-main-with-footer {
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
+}
+
+// 可滚动列表区域撑满父级（嵌套 flex 列时用 height:0 触发滚动）
+.boss-list-scroll-fill {
+  flex: 1;
+  min-height: 0;
+  height: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+// 侧栏分类 scroll-view：固定宽度 + 撑满主区域高度
+.boss-side-scroll-fill {
+  flex-shrink: 0;
+  align-self: stretch;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+// 固定底栏时，scroll-view 内部末尾留白，避免最后一条被挡住
+.boss-scroll-with-footer {
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
+}
+
+.boss-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1rpx solid #e8e8e8;
+  box-shadow: 0 -2rpx 16rpx rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+
+// 底栏贴在 flex 页面底部（推荐，避免与内容区之间出现白条）
+.boss-bottom-bar.boss-bottom-bar--static {
+  position: static;
+  flex-shrink: 0;
+}
+
+.boss-bottom-bar.column {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.boss-primary-btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  background: $boss-green;
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: $boss-radius;
+  border: none;
+}
+
+.boss-primary-btn::after {
+  border: none;
+}
+
+.boss-primary-btn.block {
+  flex: none;
+  width: 100%;
+}
+
+.boss-outline-btn {
+  flex-shrink: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 32rpx;
+  margin: 0;
+  background: #fff;
+  color: #07c160;
+  font-size: 28rpx;
+  border: 2rpx solid #07c160;
+  border-radius: 12rpx;
+}
+
+.boss-outline-btn::after {
+  border: none;
+}
+
+.boss-secondary-btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  background: #f5f6f7;
+  color: #333;
+  font-size: 30rpx;
+  border-radius: 12rpx;
+  border: none;
+}
+
+.boss-tool-item {
+  width: 100rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+}
+
+.boss-tool-icon {
+  font-size: 36rpx;
+}
+
+.boss-tool-label {
+  font-size: 22rpx;
+  color: #666;
+}

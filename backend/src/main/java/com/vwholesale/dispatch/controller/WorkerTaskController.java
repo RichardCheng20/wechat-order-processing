@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-@Tag(name = "工人端-任务")
+@Tag(name = "员工端-任务")
 @RestController
 @RequestMapping("/api/worker")
 @RequiredArgsConstructor
@@ -56,6 +56,12 @@ public class WorkerTaskController {
     @PostMapping("/tasks/{id}/picked")
     public ApiResponse<WorkerTaskVO> picked(@PathVariable Long id) {
         return ApiResponse.ok(dispatchService.markPicked(id));
+    }
+
+    @Operation(summary = "一键完成分拣")
+    @PostMapping("/tasks/{id}/complete-pick")
+    public ApiResponse<WorkerTaskVO> completePick(@PathVariable Long id) {
+        return ApiResponse.ok(dispatchService.completePickQuick(id));
     }
 
     @Operation(summary = "标记已送达")

@@ -31,9 +31,19 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import java.util.Set;
+
 @Service
 @RequiredArgsConstructor
 public class DispatchService {
+
+    private static final Set<String> ASSIGNABLE_STATUSES = Set.of(
+            OrderStatus.PENDING_CONFIRM,
+            OrderStatus.PENDING_PICK,
+            OrderStatus.PENDING_PRICE,
+            OrderStatus.PICKING,
+            OrderStatus.PRICED
+    );
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -49,9 +59,14 @@ public class DispatchService {
         Order order = getOrderOrThrow(orderId);
         Worker worker = workerService.getWorkerOrThrow(workerId);
 
-        if (!OrderStatus.PENDING_PICK.equals(order.getStatus())
-                && !OrderStatus.PICKING.equals(order.getStatus())) {
-            throw BusinessException.of(400, "只有待分拣或分拣中的订单可以派单");
+        if (!ASSIGNABLE_STATUSES.contains(order.getStatus())) {
+            throw BusinessException.of(400, "当前订单状态不可派单");
+        }
+
+        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())
+                || OrderStatus.PENDING_PRICE.equals(order.getStatus())
+                || OrderStatus.PRICED.equals(order.getStatus())) {
+            order.setStatus(OrderStatus.PENDING_PICK);
         }
 
         Long fromWorkerId = order.getAssignedWorkerId();
@@ -124,6 +139,18 @@ public class DispatchService {
     }
 
     @Transactional
+    public WorkerTaskVO completePickQuick(Long orderId) {
+        Order order = getWorkerOrderOrThrow(orderId);
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+            order.setStatus(OrderStatus.PICKING);
+            orderMapper.updateById(order);
+        } else if (!OrderStatus.PICKING.equals(order.getStatus())) {
+            throw BusinessException.of(400, "只有待分拣或分拣中订单可以一键完成");
+        }
+        return markPicked(orderId);
+    }
+
+    @Transactional
     public WorkerTaskVO markPicked(Long orderId) {
         Order order = getWorkerOrderOrThrow(orderId);
         if (!OrderStatus.PICKING.equals(order.getStatus())) {
@@ -166,7 +193,7 @@ public class DispatchService {
         RoleChecker.requireWorker();
         Long workerId = RoleChecker.currentWorkerId();
         if (workerId == null) {
-            throw BusinessException.of(403, "工人档案未初始化，请重新登录");
+            throw BusinessException.of(403, "员工档案未初始化，请重新登录");
         }
         return workerId;
     }
@@ -182,11 +209,12 @@ public class DispatchService {
     }
 
     private WorkerTaskVO toWorkerTaskVO(Order order, boolean withItems) {
-        Customer customer = customerMapper.selectById(order.getCustomerId());
+        Customer customer = order.getCustomerId() != null ? customerMapper.selectById(order.getCustomerId()) : null;
+        String customerName = customer != null ? customer.getName() : order.getGuestCustomerName();
         WorkerTaskVO.WorkerTaskVOBuilder builder = WorkerTaskVO.builder()
                 .id(order.getId())
                 .orderNo(order.getOrderNo())
-                .customerName(customer != null ? customer.getName() : "客户")
+                .customerName(customerName != null ? customerName : "客户")
                 .deliveryAddressShort(order.getDeliveryAddressShort())
                 .status(order.getStatus())
                 .statusLabel(statusLabel(order.getStatus()))

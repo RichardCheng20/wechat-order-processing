@@ -15,6 +15,7 @@ public class ProductCategory {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long merchantId;
+    private Long parentId;
     private String name;
     private Integer sortOrder;
     private Integer status;

@@ -44,9 +44,6 @@ function homeByRole(role: UserRole, customerId?: number | null) {
     case 'WORKER':
       return '/pages/worker/tasks/index'
     case 'CUSTOMER':
-      if (!customerId) {
-        return '/pages/customer/bind/index'
-      }
       return '/pages/customer/home/index'
     default:
       return '/pages/customer/home/index'
@@ -135,6 +132,16 @@ export const useUserStore = defineStore('user', {
       uni.removeStorageSync('token')
       uni.removeStorageSync(PROFILE_KEY)
       uni.reLaunch({ url: '/pages/login/index' })
+    },
+
+    updateLocalNickname(nickname: string) {
+      this.nickname = nickname
+      const raw = uni.getStorageSync(PROFILE_KEY)
+      if (raw) {
+        const data = JSON.parse(raw as string) as LoginResult
+        data.nickname = nickname
+        uni.setStorageSync(PROFILE_KEY, JSON.stringify(data))
+      }
     },
 
     applyCustomerBind(customerId: number, customerName?: string) {

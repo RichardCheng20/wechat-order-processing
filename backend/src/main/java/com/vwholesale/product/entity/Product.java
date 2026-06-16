@@ -20,6 +20,7 @@ public class Product {
     private String name;
     private String aliases;
     private String unit;
+    private String saleUnits;
     private String spec;
     private BigDecimal defaultPrice;
     private BigDecimal defaultPurchasePrice;

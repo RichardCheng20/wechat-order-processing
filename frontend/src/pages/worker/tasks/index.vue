@@ -2,10 +2,11 @@
   <view class="page">
     <view class="banner">
       <view class="banner-top">
-        <text class="title">今日任务</text>
+        <text class="title">你好，{{ userStore.nickname || '员工' }}</text>
         <text class="logout" @tap="handleLogout">退出</text>
       </view>
-      <text class="hint">仅显示派发给你的订单，不含价格信息</text>
+      <text v-if="userStore.openid" class="dev-tag">{{ userStore.openid }}</text>
+      <text class="hint">按客户逐个分拣，完成后一键标记</text>
     </view>
 
     <view v-if="loading" class="loading-wrap">
@@ -110,6 +111,13 @@ function handleLogout() {
   margin-top: 12rpx;
   font-size: 26rpx;
   color: #888;
+}
+
+.dev-tag {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #999;
 }
 
 .loading-wrap,

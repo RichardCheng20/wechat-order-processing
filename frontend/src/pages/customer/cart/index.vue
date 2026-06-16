@@ -6,16 +6,26 @@
     </view>
 
     <view v-else>
+      <view v-if="!userStore.customerId" class="shop-card">
+        <text class="shop-label">店铺/客户名称</text>
+        <u-input
+          v-model="shopName"
+          placeholder="请输入您的店铺或客户名称"
+          @change="onShopNameChange"
+        />
+        <text class="shop-tip">未绑定客户档案时必填，老板将按此名称处理订单</text>
+      </view>
+
       <view class="list">
-        <view v-for="item in cartStore.items" :key="item.productId" class="card">
+        <view v-for="item in cartStore.items" :key="`${item.productId}-${item.unit}`" class="card">
           <view class="main">
             <text class="name">{{ item.name }}</text>
             <text class="unit">{{ item.unit }}</text>
           </view>
           <view class="side">
-            <view class="qty-btn" @tap="changeQty(item.productId, -1)">-</view>
+            <view class="qty-btn" @tap="changeQty(item.productId, item.unit, -1)">-</view>
             <text class="qty">{{ item.qty }}</text>
-            <view class="qty-btn add" @tap="changeQty(item.productId, 1)">+</view>
+            <view class="qty-btn add" @tap="changeQty(item.productId, item.unit, 1)">+</view>
           </view>
         </view>
       </view>
@@ -34,31 +44,62 @@
 </template>
 
 <script setup lang="ts">
+import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import { createCustomerOrder } from '../../../api/order'
 import { useCartStore } from '../../../stores/cart'
+import { useUserStore } from '../../../stores/user'
 
+const userStore = useUserStore()
 const cartStore = useCartStore()
 const remark = ref('')
+const shopName = ref('')
 const submitting = ref(false)
 
-function changeQty(productId: number, delta: number) {
-  const item = cartStore.items.find((i) => i.productId === productId)
+onShow(() => {
+  if (!userStore.isLoggedIn || !userStore.isCustomer) {
+    uni.reLaunch({ url: '/pages/login/index' })
+    return
+  }
+  if (!userStore.customerId) {
+    shopName.value = cartStore.guestShopName || userStore.nickname || ''
+  }
+})
+
+function onShopNameChange() {
+  cartStore.setGuestShopName(shopName.value)
+}
+
+function changeQty(productId: number, unit: string, delta: number) {
+  const item = cartStore.items.find((i) => i.productId === productId && i.unit === unit)
   if (!item) return
-  cartStore.setQty(productId, item.qty + delta)
+  cartStore.setQty(productId, item.qty + delta, unit)
 }
 
 async function handleSubmit() {
   if (cartStore.items.length === 0) return
+
+  if (!userStore.customerId) {
+    const name = shopName.value.trim()
+    if (!name) {
+      uni.showToast({ title: '请输入店铺/客户名称', icon: 'none' })
+      return
+    }
+    cartStore.setGuestShopName(name)
+  }
+
   submitting.value = true
   try {
-    const order = await createCustomerOrder({
+    const payload = {
       items: cartStore.items.map((item) => ({
         productId: item.productId,
         orderQty: item.qty,
+        unit: item.unit,
       })),
       remark: remark.value || undefined,
-    })
+      ...(userStore.customerId ? {} : { customerName: shopName.value.trim() }),
+    }
+    const order = await createCustomerOrder(payload)
     cartStore.clear()
     uni.showToast({ title: '下单成功', icon: 'success' })
     setTimeout(() => {
@@ -86,6 +127,29 @@ function goHome() {
 .empty-wrap {
   padding: 120rpx 0;
   text-align: center;
+}
+
+.shop-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin-bottom: 16rpx;
+}
+
+.shop-label {
+  display: block;
+  margin-bottom: 16rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.shop-tip {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #999;
+  line-height: 1.5;
 }
 
 .list {

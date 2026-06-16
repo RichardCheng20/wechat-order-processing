@@ -29,6 +29,12 @@ public class OrderVO {
     private LocalDateTime createdAt;
     private List<OrderItemVO> items;
     private Integer itemCount;
+    private Integer pickedItemCount;
+    private BigDecimal paidAmount;
+    private Boolean priceIncomplete;
+    private String sourceLabel;
+    private String paymentStatusLabel;
+    private Boolean printed;
     private Long assignedWorkerId;
     private String assignedWorkerName;
 }

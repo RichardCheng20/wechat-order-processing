@@ -30,13 +30,13 @@ public class BossDispatchController {
     private final DispatchService dispatchService;
     private final WorkerService workerService;
 
-    @Operation(summary = "工人列表")
+    @Operation(summary = "员工列表")
     @GetMapping("/workers")
     public ApiResponse<List<WorkerVO>> workers() {
         return ApiResponse.ok(workerService.listForBoss());
     }
 
-    @Operation(summary = "派单给工人")
+    @Operation(summary = "派单给员工")
     @PostMapping("/orders/{id}/assign")
     public ApiResponse<WorkerTaskVO> assign(@PathVariable Long id, @Valid @RequestBody AssignOrderRequest request) {
         return ApiResponse.ok(dispatchService.assignOrder(id, request.getWorkerId()));

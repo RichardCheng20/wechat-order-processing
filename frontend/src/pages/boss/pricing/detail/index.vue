@@ -21,6 +21,7 @@
             下单 {{ item.orderQty }}{{ item.unit }}
             <text v-if="item.actualQty != null"> · 实际 {{ item.actualQty }}{{ item.unit }}</text>
           </text>
+          <text v-if="item.pickRemark" class="pick-remark">分拣备注：{{ item.pickRemark }}</text>
           <text class="ref">参考价 ¥{{ formatPrice(item.referencePrice) }}</text>
           <view class="price-row">
             <text class="label">成交单价</text>
@@ -35,7 +36,7 @@
         </view>
       </view>
 
-      <view class="footer">
+      <view class="footer boss-bottom-bar column">
         <text class="total">订单总额 ¥{{ totalAmount }}</text>
         <u-button
           v-if="!readonly"
@@ -166,9 +167,11 @@ async function handlePublish() {
 </script>
 
 <style scoped lang="scss">
+@import '../../../../styles/boss-footer.scss';
+
 .page {
   min-height: 100vh;
-  padding-bottom: 180rpx;
+  background: #f5f6f7;
 }
 
 .loading-wrap {
@@ -178,6 +181,7 @@ async function handlePublish() {
 
 .content {
   padding: 24rpx;
+  padding-bottom: calc(280rpx + env(safe-area-inset-bottom));
 }
 
 .header {
@@ -238,6 +242,13 @@ async function handlePublish() {
   color: #666;
 }
 
+.pick-remark {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #e67e22;
+}
+
 .price-row {
   display: flex;
   align-items: center;
@@ -256,16 +267,6 @@ async function handlePublish() {
   font-size: 28rpx;
   color: #e67e22;
   font-weight: 600;
-}
-
-.footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
-  background: #fff;
-  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.06);
 }
 
 .total {

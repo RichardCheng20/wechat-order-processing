@@ -45,7 +45,7 @@ public class WorkerService {
             worker = new Worker();
             worker.setMerchantId(user.getMerchantId());
             worker.setUserId(user.getId());
-            worker.setName(StringUtils.hasText(user.getNickname()) ? user.getNickname() : "工人");
+            worker.setName(StringUtils.hasText(user.getNickname()) ? user.getNickname() : "员工");
             worker.setStatus(1);
             workerMapper.insert(worker);
         } else if (StringUtils.hasText(user.getNickname()) && !user.getNickname().equals(worker.getName())) {
@@ -60,7 +60,7 @@ public class WorkerService {
                 .eq(Worker::getId, workerId)
                 .eq(Worker::getMerchantId, merchantContext.currentMerchantId()));
         if (worker == null || worker.getStatus() == null || worker.getStatus() == 0) {
-            throw com.vwholesale.common.exception.BusinessException.of(404, "工人不存在或已停用");
+            throw com.vwholesale.common.exception.BusinessException.of(404, "员工不存在或已停用");
         }
         return worker;
     }

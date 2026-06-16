@@ -19,6 +19,7 @@ public class Order {
     private Long merchantId;
     private String orderNo;
     private Long customerId;
+    private String guestCustomerName;
     private String source;
     private String status;
     private LocalDate deliveryDate;
@@ -36,4 +37,5 @@ public class Order {
     private Integer deleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime printedAt;
 }

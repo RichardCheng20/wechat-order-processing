@@ -59,6 +59,15 @@ npm run dev:mp-weixin
 
 用微信开发者工具打开 `frontend/dist/dev/mp-weixin`。
 
+## Dev 测试账号（登录页一键切换）
+
+| 角色 | openid | 显示名 |
+|------|--------|--------|
+| 老板 | `dev-owner-001` | 老板 |
+| 客户 A/B/C | `dev-customer-001` / `002` / `003` | 微信用户1/2/3 |
+
+**主流程**：客户下单 → 老板「确认已交货」→ 录价 → 推送给客户。订单详情可「修改状态」用于纠错回退。
+
 ## 文档
 
 - [PRD](docs/vegetable-wholesale-miniapp-prd.md)

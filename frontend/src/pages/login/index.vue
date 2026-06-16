@@ -2,7 +2,7 @@
   <view class="page">
     <view class="header">
       <text class="title">蔬菜批发</text>
-      <text class="subtitle">客户下单 · 商户管理 · 工人分拣</text>
+      <text class="subtitle">客户下单 · 老板确认 · 录价推送</text>
     </view>
 
     <view class="card">
@@ -13,7 +13,6 @@
       <text class="dev-title">本地开发快捷登录（联调后端）</text>
       <u-button class="dev-btn" text="老板登录" @click="loginAsOwner" />
       <u-button class="dev-btn" text="合伙人登录" @click="loginAsPartner" />
-      <u-button class="dev-btn" text="工人登录" @click="loginAsWorker" />
       <u-button class="dev-btn" text="客户A（微信用户1）" @click="loginAsCustomerA" />
       <u-button class="dev-btn" text="客户B（微信用户2）" @click="loginAsCustomerB" />
       <u-button class="dev-btn" text="客户C（微信用户3）" @click="loginAsCustomerC" />
@@ -68,10 +67,6 @@ function loginAsOwner() {
 
 function loginAsPartner() {
   devAs('dev-partner-001', '合伙人', 'PARTNER_ADMIN')
-}
-
-function loginAsWorker() {
-  devAs('dev-worker-001', '工人', 'WORKER')
 }
 
 function loginAsCustomerA() {

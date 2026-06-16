@@ -8,6 +8,19 @@ export interface CartItem {
 }
 
 const CART_KEY = 'customer_cart'
+const GUEST_SHOP_KEY = 'guest_shop_name'
+
+function loadGuestShopName(): string {
+  try {
+    return (uni.getStorageSync(GUEST_SHOP_KEY) as string) || ''
+  } catch {
+    return ''
+  }
+}
+
+function saveGuestShopName(name: string) {
+  uni.setStorageSync(GUEST_SHOP_KEY, name)
+}
 
 function loadCart(): CartItem[] {
   try {
@@ -26,6 +39,7 @@ function saveCart(items: CartItem[]) {
 export const useCartStore = defineStore('cart', {
   state: () => ({
     items: loadCart() as CartItem[],
+    guestShopName: loadGuestShopName(),
   }),
 
   getters: {
@@ -35,11 +49,11 @@ export const useCartStore = defineStore('cart', {
 
   actions: {
     addProduct(product: { id: number; name: string; unit: string }, delta = 1) {
-      const existing = this.items.find((item) => item.productId === product.id)
+      const existing = this.items.find((item) => item.productId === product.id && item.unit === product.unit)
       if (existing) {
         existing.qty = Math.max(0, existing.qty + delta)
         if (existing.qty === 0) {
-          this.items = this.items.filter((item) => item.productId !== product.id)
+          this.items = this.items.filter((item) => !(item.productId === product.id && item.unit === product.unit))
         }
       } else if (delta > 0) {
         this.items.push({
@@ -52,11 +66,13 @@ export const useCartStore = defineStore('cart', {
       saveCart(this.items)
     },
 
-    setQty(productId: number, qty: number) {
-      const item = this.items.find((i) => i.productId === productId)
+    setQty(productId: number, qty: number, unit?: string) {
+      const item = unit
+        ? this.items.find((i) => i.productId === productId && i.unit === unit)
+        : this.items.find((i) => i.productId === productId)
       if (!item) return
       if (qty <= 0) {
-        this.items = this.items.filter((i) => i.productId !== productId)
+        this.items = this.items.filter((i) => !(i.productId === productId && i.unit === item.unit))
       } else {
         item.qty = qty
       }
@@ -66,6 +82,11 @@ export const useCartStore = defineStore('cart', {
     clear() {
       this.items = []
       saveCart(this.items)
+    },
+
+    setGuestShopName(name: string) {
+      this.guestShopName = name.trim()
+      saveGuestShopName(this.guestShopName)
     },
   },
 })

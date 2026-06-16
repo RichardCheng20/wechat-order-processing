@@ -19,4 +19,5 @@ public class OrderPricingItemVO {
     private BigDecimal dealPrice;
     private BigDecimal subtotalAmount;
     private Integer shortageFlag;
+    private String pickRemark;
 }

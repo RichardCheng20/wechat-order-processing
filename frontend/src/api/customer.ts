@@ -18,6 +18,8 @@ export interface CustomerItem {
   remark?: string
   status?: number
   createdAt?: string
+  outstandingAmount?: number
+  lastOrderAt?: string
 }
 
 export interface InviteCodeResult {
@@ -53,6 +55,13 @@ export function createBossCustomer(data: CustomerCreatePayload) {
     url: '/api/boss/customers',
     method: 'POST',
     data,
+  })
+}
+
+export function deleteBossCustomer(id: number) {
+  return request<void>({
+    url: `/api/boss/customers/${id}`,
+    method: 'DELETE',
   })
 }
 

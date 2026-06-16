@@ -1,6 +1,6 @@
 {
     "name" : "蔬菜批发",
-    "appid" : "wx3988c400ac1e395b",
+    "appid" : "wxb9af2751957bf934",
     "description" : "蔬菜批发商户微信小程序",
     "versionName" : "1.0.0",
     "versionCode" : "100",
@@ -50,7 +50,7 @@
     "quickapp" : {},
     /* 小程序特有相关 */
     "mp-weixin" : {
-        "appid" : "wx3988c400ac1e395b",
+        "appid" : "wxb9af2751957bf934",
         "setting" : {
             "urlCheck" : false
         },

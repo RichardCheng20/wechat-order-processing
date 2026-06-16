@@ -1,41 +1,78 @@
 <template>
-  <view class="page">
-    <view class="header">
-      <text class="title">客户管理</text>
-      <u-button size="small" type="primary" text="新建" @click="showCreate = true" />
-    </view>
-
-    <view class="search-box">
-      <u-search
-        v-model="keyword"
-        placeholder="搜索客户名称/联系人/电话"
-        :show-action="false"
-        @search="loadData"
-        @clear="loadData"
-      />
-    </view>
-
-    <view v-if="loading" class="loading-wrap">
-      <u-loading-icon text="加载中" />
-    </view>
-
-    <view v-else-if="customers.length === 0" class="empty-wrap">
-      <u-empty mode="list" text="暂无客户档案" />
-    </view>
-
-    <view v-else class="list">
-      <view v-for="item in customers" :key="item.id" class="card">
-        <view class="main">
-          <text class="name">{{ item.name }}</text>
-          <text class="meta">{{ item.contactName || '—' }} · {{ item.phone || '无电话' }}</text>
-          <text class="meta">{{ item.addressShort || item.address || '未填地址' }}</text>
-        </view>
-        <view class="side">
-          <u-tag :text="bindStatusText(item.bindStatus)" :type="bindTagType(item.bindStatus)" size="mini" />
-          <text v-if="item.autoConfirmOrder" class="tag-extra">自动确认</text>
-          <view class="invite-btn" @tap="handleInvite" :data-id="item.id">生成邀请码</view>
-        </view>
+  <view class="page boss-page">
+    <view class="top-bar">
+      <view class="search-wrap">
+        <input
+          class="search-input"
+          type="text"
+          :value="keyword"
+          placeholder="搜索客户名称"
+          confirm-type="search"
+          @input="onKeywordInput"
+          @confirm="onSearchConfirm"
+        />
+        <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
       </view>
+
+      <view class="tabs">
+        <view
+          class="tab-item"
+          :class="{ active: tab === 'all' }"
+          @tap="tab = 'all'"
+        >全部客户</view>
+        <view
+          class="tab-item"
+          :class="{ active: tab === 'unsettled' }"
+          @tap="tab = 'unsettled'"
+        >未结清</view>
+      </view>
+
+      <view v-if="tab === 'unsettled' && !loading" class="summary-bar">
+        <text>共 {{ unsettledCount }} 位，共欠款：￥{{ formatMoney(totalUnsettled) }}</text>
+      </view>
+    </view>
+
+    <scroll-view scroll-y class="list-scroll boss-page-scroll">
+      <view v-if="loading" class="state-wrap">
+        <u-loading-icon text="加载中" />
+      </view>
+
+      <view v-else-if="displayCustomers.length === 0" class="state-wrap">
+        <u-empty
+          mode="list"
+          :text="tab === 'unsettled' ? '暂无未结清客户' : '暂无客户档案'"
+        />
+      </view>
+
+      <view v-else>
+        <view class="section-title">所有客户</view>
+        <view
+          v-for="item in displayCustomers"
+          :key="item.id"
+          class="row"
+          @longpress="handleDelete(item)"
+        >
+          <view class="row-main">
+            <text class="name">{{ item.name }}</text>
+            <view v-if="hasDebt(item)" class="debt-tag">
+              <text>欠 ¥ {{ formatMoney(item.outstandingAmount) }}</text>
+            </view>
+          </view>
+          <view class="row-side">
+            <view
+              class="invite-btn"
+              :class="{ bound: item.bindStatus === 'BOUND' }"
+              @tap.stop="handleInvite(item)"
+            >{{ item.bindStatus === 'BOUND' ? '已绑定' : '邀请下单' }}</view>
+            <text class="order-date">下单: {{ formatOrderDate(item.lastOrderAt) }}</text>
+          </view>
+        </view>
+        <view class="list-end">—— 没有更多了 ——</view>
+      </view>
+    </scroll-view>
+
+    <view class="boss-bottom-bar boss-bottom-bar--static">
+      <button class="boss-primary-btn block" @tap="showCreate = true">新建客户</button>
     </view>
 
     <u-popup :show="showCreate" mode="bottom" round="16" @close="showCreate = false">
@@ -45,7 +82,7 @@
         <u-input v-model="form.contactName" placeholder="联系人" />
         <u-input v-model="form.phone" placeholder="联系电话" />
         <u-input v-model="form.address" placeholder="完整地址（管理员可见）" />
-        <u-input v-model="form.addressShort" placeholder="简写地址（工人可见，如城南农贸3号门）" />
+        <u-input v-model="form.addressShort" placeholder="简写地址（如城南农贸3号门）" />
         <view class="switch-row">
           <text>下单后自动确认</text>
           <switch :checked="form.autoConfirmOrder" @change="onAutoConfirmChange" />
@@ -68,10 +105,11 @@
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app'
-import { reactive, ref } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { computed, reactive, ref } from 'vue'
 import {
   createBossCustomer,
+  deleteBossCustomer,
   fetchBossCustomers,
   generateCustomerInvite,
   type CustomerItem,
@@ -82,6 +120,7 @@ import { useUserStore } from '../../../stores/user'
 const userStore = useUserStore()
 const customers = ref<CustomerItem[]>([])
 const keyword = ref('')
+const tab = ref<'all' | 'unsettled'>('all')
 const loading = ref(false)
 const saving = ref(false)
 const showCreate = ref(false)
@@ -93,6 +132,36 @@ const form = reactive({
   address: '',
   addressShort: '',
   autoConfirmOrder: false,
+})
+
+const filteredByKeyword = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return customers.value
+  return customers.value.filter((item) => {
+    const hay = `${item.name} ${item.contactName || ''} ${item.phone || ''}`.toLowerCase()
+    return hay.includes(kw)
+  })
+})
+
+const displayCustomers = computed(() => {
+  if (tab.value === 'unsettled') {
+    return filteredByKeyword.value.filter((item) => hasDebt(item))
+  }
+  return filteredByKeyword.value
+})
+
+const unsettledCount = computed(() =>
+  customers.value.filter((item) => hasDebt(item)).length,
+)
+
+const totalUnsettled = computed(() =>
+  customers.value.reduce((sum, item) => sum + (item.outstandingAmount || 0), 0),
+)
+
+onLoad((query) => {
+  if (query?.tab === 'unsettled') {
+    tab.value = 'unsettled'
+  }
 })
 
 onShow(async () => {
@@ -112,21 +181,22 @@ async function loadData() {
   }
 }
 
-function bindStatusText(status: string) {
-  switch (status) {
-    case 'BOUND': return '已绑定'
-    case 'INVITED': return '已邀请'
-    case 'DISABLED': return '已停用'
-    default: return '未邀请'
-  }
+function hasDebt(item: CustomerItem) {
+  return (item.outstandingAmount || 0) > 0
 }
 
-function bindTagType(status: string) {
-  switch (status) {
-    case 'BOUND': return 'success'
-    case 'INVITED': return 'warning'
-    default: return 'info'
-  }
+function onKeywordInput(e: { detail: { value: string } }) {
+  keyword.value = e.detail.value
+}
+
+function onSearchConfirm() {
+  keyword.value = keyword.value.trim()
+  loadData()
+}
+
+function clearKeyword() {
+  keyword.value = ''
+  loadData()
 }
 
 function onAutoConfirmChange(e: { detail: { value: boolean } }) {
@@ -164,15 +234,35 @@ async function submitCreate() {
   }
 }
 
-async function handleInvite(e: { currentTarget: { dataset: { id?: string | number } } }) {
-  const id = Number(e.currentTarget.dataset.id)
-  if (!id) return
+async function handleInvite(item: CustomerItem) {
+  if (item.bindStatus === 'BOUND') {
+    uni.showToast({ title: '客户已绑定微信', icon: 'none' })
+    return
+  }
   try {
-    inviteInfo.value = await generateCustomerInvite(id)
+    inviteInfo.value = await generateCustomerInvite(item.id)
     await loadData()
   } catch (err) {
     uni.showToast({ title: err instanceof Error ? err.message : '生成失败', icon: 'none' })
   }
+}
+
+function handleDelete(item: CustomerItem) {
+  uni.showModal({
+    title: '确认删除',
+    content: `确定删除「${item.name}」？删除后不可恢复。`,
+    confirmColor: '#e74c3c',
+    success: async (res) => {
+      if (!res.confirm) return
+      try {
+        await deleteBossCustomer(item.id)
+        uni.showToast({ title: '已删除', icon: 'success' })
+        await loadData()
+      } catch (err) {
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败', icon: 'none' })
+      }
+    },
+  })
 }
 
 function copyInviteCode() {
@@ -183,6 +273,17 @@ function copyInviteCode() {
   })
 }
 
+function formatMoney(value?: number) {
+  if (value == null || value <= 0) return '0.00'
+  return Number(value).toFixed(2)
+}
+
+function formatOrderDate(value?: string) {
+  if (!value) return '-'
+  const date = value.replace('T', ' ').slice(0, 10)
+  return date.replace(/-/g, '.')
+}
+
 function formatTime(value: string) {
   if (!value) return '—'
   return value.replace('T', ' ').slice(0, 16)
@@ -190,71 +291,159 @@ function formatTime(value: string) {
 </script>
 
 <style scoped lang="scss">
-.page {
-  min-height: 100vh;
-  padding: 24rpx;
+@import '../../../styles/boss-footer.scss';
+
+.top-bar {
+  flex-shrink: 0;
+  background: #fff;
 }
 
-.header {
+.search-wrap {
+  position: relative;
+  padding: 16rpx 24rpx;
+  background: #f5f6f7;
+}
+
+.search-input {
+  height: 72rpx;
+  padding: 0 72rpx 0 28rpx;
+  background: #fff;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  color: #222;
+}
+
+.search-clear {
+  position: absolute;
+  right: 44rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  font-size: 32rpx;
+  color: #bbb;
+}
+
+.tabs {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24rpx;
+  border-bottom: 1rpx solid #f0f0f0;
 }
 
-.title {
-  font-size: 36rpx;
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0;
+  font-size: 30rpx;
+  color: #666;
+  position: relative;
+}
+
+.tab-item.active {
+  color: #07c160;
   font-weight: 600;
 }
 
-.search-box {
-  margin-bottom: 24rpx;
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 48rpx;
+  height: 6rpx;
+  background: #07c160;
+  border-radius: 3rpx;
 }
 
-.loading-wrap,
-.empty-wrap {
+.summary-bar {
+  padding: 20rpx 24rpx;
+  background: #fff8e6;
+  font-size: 28rpx;
+  color: #e67e22;
+  font-weight: 500;
+}
+
+.list-scroll {
+  background: #fff;
+}
+
+.state-wrap {
   padding: 80rpx 0;
   text-align: center;
 }
 
-.card {
+.section-title {
+  padding: 20rpx 24rpx 12rpx;
+  font-size: 26rpx;
+  color: #999;
+  background: #f5f6f7;
+}
+
+.row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 28rpx;
-  margin-bottom: 16rpx;
+  padding: 28rpx 24rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+  gap: 16rpx;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .name {
   display: block;
   font-size: 32rpx;
   font-weight: 600;
+  color: #222;
 }
 
-.meta {
-  display: block;
-  margin-top: 8rpx;
+.debt-tag {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 4rpx 14rpx;
+  background: #fdecea;
+  border-radius: 8rpx;
   font-size: 24rpx;
-  color: #666;
+  color: #e74c3c;
 }
 
-.side {
-  text-align: right;
-  min-width: 180rpx;
-}
-
-.tag-extra {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  color: #27ae60;
+.row-side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
 }
 
 .invite-btn {
-  margin-top: 16rpx;
+  padding: 10rpx 24rpx;
+  font-size: 26rpx;
+  color: #07c160;
+  border: 2rpx solid #07c160;
+  border-radius: 999rpx;
+  background: #fff;
+}
+
+.invite-btn.bound {
+  color: #999;
+  border-color: #ddd;
+}
+
+.order-date {
+  font-size: 22rpx;
+  color: #bbb;
+}
+
+.list-end {
+  padding: 40rpx 0 24rpx;
+  text-align: center;
   font-size: 24rpx;
-  color: #2979ff;
+  color: #ccc;
 }
 
 .form {

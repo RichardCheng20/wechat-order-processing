@@ -1,0 +1,67 @@
+// 蔬菜批发老板端 — 市集档口感：鲜绿、温白、清晰价签
+
+$boss-green: #06ae56;
+$boss-green-soft: #e8f7ef;
+$boss-green-deep: #048f47;
+$boss-bg: #f3f5f2;
+$boss-surface: #ffffff;
+$boss-ink: #1a1f1c;
+$boss-ink-secondary: #5c6560;
+$boss-ink-muted: #8a938d;
+$boss-border: #e6ebe7;
+$boss-price: #d4380d;
+$boss-warn: #d48806;
+$boss-danger: #cf1322;
+$boss-radius: 12rpx;
+$boss-radius-pill: 999rpx;
+
+@mixin boss-search-input {
+  height: 72rpx;
+  padding: 0 72rpx 0 28rpx;
+  background: $boss-surface;
+  border-radius: $boss-radius-pill;
+  font-size: 28rpx;
+  color: $boss-ink;
+  border: 1rpx solid $boss-border;
+  box-sizing: border-box;
+}
+
+@mixin boss-chip($active: false) {
+  padding: 10rpx 24rpx;
+  font-size: 24rpx;
+  color: if($active, $boss-green-deep, $boss-ink-secondary);
+  background: if($active, $boss-green-soft, $boss-surface);
+  border-radius: $boss-radius-pill;
+  @if $active {
+    font-weight: 600;
+  }
+}
+
+@mixin boss-cat-active {
+  color: $boss-green-deep;
+  background: $boss-surface;
+  font-weight: 600;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6rpx;
+    height: 36rpx;
+    background: $boss-green;
+    border-radius: 0 4rpx 4rpx 0;
+  }
+}
+
+// 嵌在右侧面板内的底栏（与列表同属一列，消除中间留白）
+.boss-panel-footer {
+  flex-shrink: 0;
+  padding: 16rpx 20rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: $boss-surface;
+  border-top: 1rpx solid $boss-border;
+  box-shadow: 0 -4rpx 24rpx rgba(26, 31, 28, 0.05);
+  box-sizing: border-box;
+}

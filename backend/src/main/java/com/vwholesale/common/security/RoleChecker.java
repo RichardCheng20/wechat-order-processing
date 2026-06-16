@@ -26,7 +26,7 @@ public final class RoleChecker {
     public static void requireWorker() {
         StpUtil.checkLogin();
         if (!StpUtil.hasRole(UserRole.WORKER.name())) {
-            throw BusinessException.of(403, "需要工人权限");
+            throw BusinessException.of(403, "需要员工权限");
         }
     }
 

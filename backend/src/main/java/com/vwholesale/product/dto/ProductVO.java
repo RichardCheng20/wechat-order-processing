@@ -15,6 +15,7 @@ public class ProductVO {
     private String name;
     private String aliases;
     private String unit;
+    private java.util.List<String> saleUnits;
     private String spec;
     private BigDecimal defaultPrice;
     private BigDecimal referencePrice;

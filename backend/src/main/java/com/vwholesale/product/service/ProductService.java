@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.vwholesale.common.context.MerchantContext;
 import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.product.dto.ProductCreateRequest;
+import com.vwholesale.product.dto.ProductSaleStatusRequest;
 import com.vwholesale.product.dto.ProductUpdateRequest;
 import com.vwholesale.product.dto.ProductVO;
 import com.vwholesale.product.entity.Product;
@@ -15,6 +16,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,17 +42,23 @@ public class ProductService {
 
     @Transactional
     public ProductVO create(ProductCreateRequest request) {
-        categoryService.getById(request.getCategoryId());
+        validateLeafCategory(request.getCategoryId());
 
         Product product = new Product();
         product.setMerchantId(merchantContext.currentMerchantId());
         product.setCategoryId(request.getCategoryId());
         product.setName(request.getName().trim());
         product.setAliases(request.getAliases());
-        product.setUnit(StringUtils.hasText(request.getUnit()) ? request.getUnit() : "斤");
+        List<String> units = normalizeSaleUnits(request.getSaleUnits(), null);
+        if (units.isEmpty()) {
+            String fallback = StringUtils.hasText(request.getUnit()) ? request.getUnit().trim() : "斤";
+            units = List.of(fallback);
+        }
+        product.setUnit(units.get(0));
+        product.setSaleUnits(String.join(",", units));
         product.setSpec(request.getSpec());
         product.setDefaultPrice(request.getDefaultPrice());
-        product.setSaleStatus(StringUtils.hasText(request.getSaleStatus()) ? request.getSaleStatus() : "ON");
+        product.setSaleStatus(StringUtils.hasText(request.getSaleStatus()) ? request.getSaleStatus() : "OFF");
         productMapper.insert(product);
         return toVO(product, null, false);
     }
@@ -58,7 +68,7 @@ public class ProductService {
         Product product = getProductOrThrow(id);
 
         if (request.getCategoryId() != null) {
-            categoryService.getById(request.getCategoryId());
+            validateLeafCategory(request.getCategoryId());
             product.setCategoryId(request.getCategoryId());
         }
         if (StringUtils.hasText(request.getName())) {
@@ -68,7 +78,10 @@ public class ProductService {
             product.setAliases(request.getAliases());
         }
         if (StringUtils.hasText(request.getUnit())) {
-            product.setUnit(request.getUnit());
+            product.setUnit(request.getUnit().trim());
+        }
+        if (request.getSaleUnits() != null && !request.getSaleUnits().isEmpty()) {
+            product.setSaleUnits(joinSaleUnits(request.getSaleUnits(), product.getUnit()));
         }
         if (request.getSpec() != null) {
             product.setSpec(request.getSpec());
@@ -84,14 +97,86 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductVO updateSaleStatus(Long id, String saleStatus) {
+    public ProductVO updateSaleStatus(Long id, ProductSaleStatusRequest request) {
+        if (request == null || !StringUtils.hasText(request.getSaleStatus())) {
+            throw BusinessException.of(400, "上下架状态无效");
+        }
+        String saleStatus = request.getSaleStatus().trim();
         if (!"ON".equals(saleStatus) && !"OFF".equals(saleStatus)) {
             throw BusinessException.of(400, "上下架状态无效");
         }
         Product product = getProductOrThrow(id);
+        if ("ON".equals(saleStatus)) {
+            List<String> units = normalizeSaleUnits(request.getSaleUnits(), product);
+            if (units.isEmpty()) {
+                throw BusinessException.of(400, "请至少选择一个售卖单位");
+            }
+            product.setSaleUnits(String.join(",", units));
+            if (!units.contains(product.getUnit())) {
+                product.setUnit(units.get(0));
+            }
+        }
         product.setSaleStatus(saleStatus);
         productMapper.updateById(product);
         return toVO(product, null, false);
+    }
+
+    public static List<String> parseSaleUnits(String saleUnits, String defaultUnit) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        if (StringUtils.hasText(saleUnits)) {
+            Arrays.stream(saleUnits.split("[,，/、]"))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
+                    .forEach(set::add);
+        }
+        if (set.isEmpty() && StringUtils.hasText(defaultUnit)) {
+            set.add(defaultUnit.trim());
+        }
+        return new ArrayList<>(set);
+    }
+
+    private List<String> normalizeSaleUnits(List<String> saleUnits, Product product) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        if (saleUnits != null) {
+            saleUnits.stream()
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .forEach(set::add);
+        }
+        if (set.isEmpty() && product != null) {
+            set.addAll(parseSaleUnits(product.getSaleUnits(), product.getUnit()));
+        }
+        return new ArrayList<>(set);
+    }
+
+    private String joinSaleUnits(List<String> saleUnits, String defaultUnit) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        if (saleUnits != null) {
+            saleUnits.stream()
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .forEach(set::add);
+        }
+        if (set.isEmpty() && StringUtils.hasText(defaultUnit)) {
+            set.add(defaultUnit.trim());
+        }
+        if (set.isEmpty()) {
+            set.add("斤");
+        }
+        return String.join(",", set);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        getProductOrThrow(id);
+        productMapper.deleteById(id);
+    }
+
+    private void validateLeafCategory(Long categoryId) {
+        categoryService.getById(categoryId);
+        if (!categoryService.isLeafCategory(categoryId)) {
+            throw BusinessException.of(400, "请选择二级分类");
+        }
     }
 
     private List<Product> queryProducts(Long categoryId, String keyword, String saleStatus) {
@@ -101,7 +186,8 @@ public class ProductService {
                 .orderByDesc(Product::getId);
 
         if (categoryId != null) {
-            wrapper.eq(Product::getCategoryId, categoryId);
+            List<Long> categoryIds = categoryService.resolveFilterCategoryIds(categoryId);
+            wrapper.in(Product::getCategoryId, categoryIds);
         }
         if (StringUtils.hasText(saleStatus)) {
             wrapper.eq(Product::getSaleStatus, saleStatus);
@@ -160,6 +246,7 @@ public class ProductService {
                 .name(product.getName())
                 .aliases(product.getAliases())
                 .unit(product.getUnit())
+                .saleUnits(parseSaleUnits(product.getSaleUnits(), product.getUnit()))
                 .spec(product.getSpec())
                 .defaultPrice(withReferencePrice ? product.getDefaultPrice() : null)
                 .referencePrice(withReferencePrice ? referencePrice : null)

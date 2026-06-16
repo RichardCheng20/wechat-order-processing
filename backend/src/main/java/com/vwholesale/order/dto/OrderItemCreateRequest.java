@@ -15,4 +15,5 @@ public class OrderItemCreateRequest {
     @NotNull(message = "数量不能为空")
     @DecimalMin(value = "0.01", message = "数量必须大于0")
     private BigDecimal orderQty;
+    private String unit;
 }

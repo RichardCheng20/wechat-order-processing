@@ -9,7 +9,9 @@
         </view>
       </view>
       <text v-if="userStore.openid" class="dev-tag">{{ userStore.openid }}</text>
-      <text class="hint">选品下单即可，价格由老板录价后确认</text>
+      <text v-if="userStore.customerId" class="hint">选品下单即可，价格由老板录价后确认</text>
+      <text v-else class="hint">临时下单：结算时填写店铺名称即可</text>
+      <text v-if="!userStore.customerId" class="bind-link" @tap="goBind">已有邀请码？去绑定客户档案</text>
     </view>
 
     <view class="search-box">
@@ -61,7 +63,7 @@
         <view class="product-main">
           <text class="product-name">{{ item.name }}</text>
           <text v-if="item.aliases" class="product-alias">{{ item.aliases }}</text>
-          <text class="product-meta">{{ item.categoryName }} · {{ item.unit }}</text>
+          <text class="product-meta">{{ item.categoryName }} · {{ formatSaleUnits(item) }}</text>
         </view>
         <view class="product-side">
           <view class="qty-box">
@@ -91,6 +93,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import { nextTick, ref } from 'vue'
 import { fetchBindStatus } from '../../../api/customer'
 import { fetchCustomerCategories, fetchCustomerProducts, type CategoryItem, type ProductItem } from '../../../api/product'
+import { parseSaleUnits } from '../../../constants/units'
 import { useCartStore } from '../../../stores/cart'
 import { useUserStore } from '../../../stores/user'
 
@@ -107,10 +110,6 @@ let fetching = false
 onLoad(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
     uni.reLaunch({ url: '/pages/login/index' })
-    return
-  }
-  if (!userStore.customerId) {
-    uni.redirectTo({ url: '/pages/customer/bind/index' })
     return
   }
   await nextTick()
@@ -167,11 +166,35 @@ async function loadProducts() {
 }
 
 function getQty(productId: number) {
-  return cartStore.items.find((item) => item.productId === productId)?.qty || 0
+  return cartStore.items
+    .filter((item) => item.productId === productId)
+    .reduce((sum, item) => sum + item.qty, 0)
+}
+
+function formatSaleUnits(item: ProductItem) {
+  return parseSaleUnits(item.saleUnits, item.unit).join('/')
 }
 
 function changeQty(product: ProductItem, delta: number) {
-  cartStore.addProduct({ id: product.id, name: product.name, unit: product.unit }, delta)
+  if (delta > 0) {
+    const units = parseSaleUnits(product.saleUnits, product.unit)
+    if (units.length > 1) {
+      uni.showActionSheet({
+        itemList: units.map((u) => `按${u}购买`),
+        success: (res) => {
+          const unit = units[res.tapIndex]
+          cartStore.addProduct({ id: product.id, name: product.name, unit }, delta)
+        },
+      })
+      return
+    }
+    cartStore.addProduct({ id: product.id, name: product.name, unit: units[0] || product.unit }, delta)
+    return
+  }
+  const lines = cartStore.items.filter((item) => item.productId === product.id && item.qty > 0)
+  if (lines.length === 0) return
+  const target = lines[lines.length - 1]
+  cartStore.addProduct({ id: product.id, name: product.name, unit: target.unit }, delta)
 }
 
 function onCategoryTap(e: { currentTarget: { dataset: { id?: string | number } } }) {
@@ -194,6 +217,10 @@ function goCart() {
 
 function goOrders() {
   uni.navigateTo({ url: '/pages/customer/orders/index' })
+}
+
+function goBind() {
+  uni.navigateTo({ url: '/pages/customer/bind/index' })
 }
 
 function handleLogout() {
@@ -246,6 +273,14 @@ function handleLogout() {
   margin-top: 12rpx;
   font-size: 24rpx;
   opacity: 0.85;
+}
+
+.bind-link {
+  display: block;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  text-decoration: underline;
+  opacity: 0.9;
 }
 
 .search-box {

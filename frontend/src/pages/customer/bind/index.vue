@@ -25,6 +25,8 @@
       <text>邀请码默认 7 天有效，过期请联系老板重新生成</text>
     </view>
 
+    <view class="skip" @tap="goShop">暂不绑定，直接选购下单</view>
+
     <view class="logout" @tap="handleLogout">退出登录</view>
   </view>
 </template>
@@ -83,6 +85,10 @@ async function handleBind() {
 function handleLogout() {
   userStore.signOut()
 }
+
+function goShop() {
+  uni.redirectTo({ url: '/pages/customer/home/index' })
+}
 </script>
 
 <style scoped lang="scss">
@@ -124,6 +130,14 @@ function handleLogout() {
   text-align: center;
   font-size: 24rpx;
   color: #999;
+}
+
+.skip {
+  margin-top: 48rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #27ae60;
+  font-weight: 600;
 }
 
 .logout {

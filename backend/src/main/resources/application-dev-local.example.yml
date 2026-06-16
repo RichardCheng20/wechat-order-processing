@@ -3,7 +3,8 @@
 
 app:
   wechat:
-    app-secret: cc276318e114d34931e2bc243bc0fd04
+    app-id: wxb9af2751957bf934
+    app-secret: 在此填入新小程序的AppSecret
   admin:
     openid-whitelist:
       - 在此填入你的openid
