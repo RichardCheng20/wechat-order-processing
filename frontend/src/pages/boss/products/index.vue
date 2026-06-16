@@ -13,14 +13,17 @@
         />
         <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
       </view>
-      <view class="status-tabs">
-        <text
-          v-for="tab in statusTabs"
-          :key="tab.key"
-          class="status-tab"
-          :class="{ active: statusFilter === tab.key }"
-          @tap="statusFilter = tab.key"
-        >{{ tab.label }}</text>
+      <view class="filter-row">
+        <view class="status-tabs">
+          <text
+            v-for="tab in statusTabs"
+            :key="tab.key"
+            class="status-tab"
+            :class="{ active: statusFilter === tab.key }"
+            @tap="statusFilter = tab.key"
+          >{{ tab.label }}</text>
+        </view>
+        <button class="create-inline-btn" @tap="goCreate">新建</button>
       </view>
       <view v-if="!loading && allProducts.length > 0" class="stats-bar">
         <text>共 {{ allProducts.length }} 个</text>
@@ -34,7 +37,7 @@
       </view>
     </view>
 
-    <view class="main boss-main-fill">
+    <view class="main" :style="mainStyle">
       <scroll-view scroll-y class="categories" :show-scrollbar="false">
         <view
           v-for="item in sidebarItems"
@@ -45,7 +48,7 @@
         >{{ item.label }}</view>
       </scroll-view>
 
-      <view class="product-panel">
+      <view class="product-panel" :class="{ 'has-sub-cats': subCategoryTabs.length > 0 }">
         <scroll-view
           v-if="subCategoryTabs.length > 0"
           scroll-x
@@ -63,15 +66,15 @@
           </view>
         </scroll-view>
 
-        <scroll-view scroll-y class="product-scroll boss-list-scroll-fill" :show-scrollbar="false">
+        <scroll-view scroll-y class="product-scroll" :show-scrollbar="false">
         <view v-if="loading" class="state-wrap">
           <u-loading-icon text="加载中" />
         </view>
 
         <view v-else-if="allProducts.length === 0" class="state-wrap">
-          <text class="empty-icon">📦</text>
+          <AppIcon class="empty-icon" name="product" tone="green" :size="30" :tile-size="84" :radius="22" />
           <text class="empty-text">还没有商品</text>
-          <text class="empty-hint">点下方「新建商品」添加，配置单位后上架即可开单</text>
+          <text class="empty-hint">点上方「新建」添加，配置单位后上架即可开单</text>
         </view>
 
         <view v-else-if="filteredProducts.length === 0" class="state-wrap">
@@ -81,9 +84,7 @@
 
         <view v-else class="list">
           <view v-for="item in filteredProducts" :key="item.id" class="card" @tap="goEdit(item)">
-            <view class="card-thumb">
-              <text class="thumb-icon">📦</text>
-            </view>
+            <AppIcon class="card-thumb" name="product" tone="orange" :size="24" :tile-size="72" :radius="18" />
             <view class="card-body">
               <view class="card-top">
                 <view class="name-block">
@@ -123,10 +124,6 @@
       </view>
     </view>
 
-    <view class="boss-bottom-bar boss-bottom-bar--static">
-      <button class="boss-primary-btn block" @tap="goCreate">新建商品</button>
-    </view>
-
     <!-- 上架 / 修改单位 -->
     <u-popup :show="showListPopup" mode="bottom" round="20" @close="closeListPopup">
       <view class="sheet">
@@ -158,8 +155,8 @@
 </template>
 
 <script setup lang="ts">
-import { onLoad, onShow } from '@dcloudio/uni-app'
-import { computed, ref } from 'vue'
+import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
+import { computed, nextTick, ref } from 'vue'
 import { COMMON_SALE_UNITS, mergeUnits, parseSaleUnits } from '../../../constants/units'
 import {
   deleteBossProduct,
@@ -170,6 +167,7 @@ import {
   type ProductItem,
 } from '../../../api/product'
 import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '../../../utils/category'
+import AppIcon from '../../../components/AppIcon.vue'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
@@ -185,6 +183,7 @@ const showListPopup = ref(false)
 const listingProduct = ref<ProductItem | null>(null)
 const selectedUnits = ref<string[]>([])
 const pendingCategoryId = ref<number | null>(null)
+const mainHeight = ref(0)
 
 const statusTabs = [
   { key: 'all' as const, label: '全部' },
@@ -194,6 +193,7 @@ const statusTabs = [
 
 const onSaleCount = computed(() => allProducts.value.filter((p) => p.saleStatus === 'ON').length)
 const offSaleCount = computed(() => allProducts.value.filter((p) => p.saleStatus === 'OFF').length)
+const mainStyle = computed(() => (mainHeight.value > 0 ? { height: `${mainHeight.value}px` } : {}))
 
 const sidebarItems = computed(() => buildPrimarySidebar(categories.value))
 
@@ -246,6 +246,10 @@ onLoad((query) => {
   }
 })
 
+onReady(() => {
+  updateMainHeight()
+})
+
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
     uni.reLaunch({ url: '/pages/login/index' })
@@ -257,6 +261,8 @@ onShow(async () => {
     subCategoryFilter.value = 'all'
     pendingCategoryId.value = null
   }
+  await nextTick()
+  updateMainHeight()
 })
 
 async function loadData() {
@@ -267,6 +273,19 @@ async function loadData() {
   } finally {
     loading.value = false
   }
+}
+
+function updateMainHeight() {
+  const { windowHeight } = uni.getSystemInfoSync()
+  uni
+    .createSelectorQuery()
+    .select('.top-bar')
+    .boundingClientRect((rect) => {
+      const topBarHeight = Array.isArray(rect) ? rect[0]?.height : rect?.height
+      if (typeof topBarHeight !== 'number') return
+      mainHeight.value = Math.max(0, windowHeight - topBarHeight)
+    })
+    .exec()
 }
 
 function onKeywordInput(e: UniInputEvent) {
@@ -383,7 +402,7 @@ function formatPrice(value?: number) {
 </script>
 
 <style scoped lang="scss">
-@import '../../../styles/boss-footer.scss';
+@import '../../../styles/boss-ui.scss';
 
 .page {
   display: flex;
@@ -395,7 +414,7 @@ function formatPrice(value?: number) {
 
 .top-bar {
   flex-shrink: 0;
-  padding: 16rpx 24rpx 12rpx;
+  padding: 12rpx 20rpx 8rpx;
   background: $boss-surface;
   border-bottom: 1rpx solid $boss-border;
 }
@@ -421,25 +440,52 @@ function formatPrice(value?: number) {
   color: $boss-ink-muted;
 }
 
-.status-tabs {
+.filter-row {
   display: flex;
-  gap: 10rpx;
-  margin-top: 12rpx;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 10rpx;
+}
+
+.status-tabs {
+  flex: 1;
+  display: flex;
+  gap: 8rpx;
+  min-width: 0;
 }
 
 .status-tab {
   @include boss-chip(false);
+  padding: 8rpx 20rpx;
 }
 
 .status-tab.active {
   @include boss-chip(true);
+  padding: 8rpx 20rpx;
+}
+
+.create-inline-btn {
+  flex-shrink: 0;
+  height: 56rpx;
+  line-height: 56rpx;
+  margin: 0;
+  padding: 0 22rpx;
+  background: $boss-green;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 600;
+  border-radius: $boss-radius;
+}
+
+.create-inline-btn::after {
+  border: none;
 }
 
 .stats-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 12rpx;
+  margin-top: 8rpx;
   font-size: 22rpx;
   color: $boss-ink-muted;
 }
@@ -457,8 +503,14 @@ function formatPrice(value?: number) {
 }
 
 .main {
+  flex: none;
+  height: calc(100vh - 174rpx);
   flex-direction: row;
   align-items: stretch;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .categories {
@@ -480,11 +532,19 @@ function formatPrice(value?: number) {
 }
 
 .product-scroll {
+  flex: none;
+  height: 100%;
   background: $boss-surface;
+  box-sizing: border-box;
+}
+
+.product-panel.has-sub-cats .product-scroll {
+  height: calc(100% - 82rpx);
 }
 
 .sub-cat-scroll {
   flex-shrink: 0;
+  height: 82rpx;
   white-space: nowrap;
   background: $boss-surface;
   border-bottom: 1rpx solid $boss-border;
@@ -508,7 +568,7 @@ function formatPrice(value?: number) {
 }
 
 .cat-item {
-  padding: 28rpx 16rpx;
+  padding: 24rpx 14rpx;
   font-size: 26rpx;
   color: $boss-ink-secondary;
   text-align: center;
@@ -531,9 +591,10 @@ function formatPrice(value?: number) {
 }
 
 .empty-icon {
-  display: block;
-  font-size: 56rpx;
-  margin-bottom: 12rpx;
+  display: flex;
+  margin: 0 auto 18rpx;
+  width: 84rpx;
+  height: 84rpx;
 }
 
 .empty-text {
@@ -557,8 +618,8 @@ function formatPrice(value?: number) {
 
 .card {
   display: flex;
-  gap: 16rpx;
-  padding: 20rpx;
+  gap: 14rpx;
+  padding: 14rpx 18rpx;
   border-bottom: 1rpx solid $boss-border;
   box-sizing: border-box;
 }
@@ -569,17 +630,9 @@ function formatPrice(value?: number) {
 
 .card-thumb {
   flex-shrink: 0;
-  width: 88rpx;
-  height: 88rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: $boss-bg;
-  border-radius: $boss-radius;
-}
-
-.thumb-icon {
-  font-size: 38rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
 }
 
 .card-body {
@@ -596,14 +649,14 @@ function formatPrice(value?: number) {
 
 .name {
   display: block;
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: $boss-ink;
 }
 
 .alias {
   display: block;
-  margin-top: 4rpx;
+  margin-top: 2rpx;
   font-size: 22rpx;
   color: $boss-ink-muted;
 }
@@ -626,11 +679,11 @@ function formatPrice(value?: number) {
 }
 
 .price-line {
-  margin-top: 10rpx;
+  margin-top: 6rpx;
 }
 
 .price {
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: $boss-price;
   font-weight: 700;
 }
@@ -644,7 +697,7 @@ function formatPrice(value?: number) {
   display: flex;
   flex-wrap: wrap;
   gap: 8rpx;
-  margin-top: 8rpx;
+  margin-top: 4rpx;
 }
 
 .unit-tag {
@@ -659,12 +712,13 @@ function formatPrice(value?: number) {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10rpx;
-  margin-top: 14rpx;
+  gap: 8rpx;
+  margin-top: 8rpx;
 }
 
 .action-btn {
-  padding: 8rpx 20rpx;
+  min-height: 44rpx;
+  padding: 7rpx 16rpx;
   font-size: 24rpx;
   border-radius: 8rpx;
   color: $boss-ink-secondary;

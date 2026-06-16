@@ -23,7 +23,15 @@
         <view v-for="group in displayGroups" :key="group.parent.id" class="group">
           <view class="row parent">
             <text class="name">{{ group.parent.name }}</text>
-            <text class="delete" @tap="handleDelete(group.parent)">🗑</text>
+            <AppIcon
+              class="delete"
+              name="delete"
+              tone="red"
+              :size="18"
+              :tile-size="48"
+              :radius="12"
+              @tap="handleDelete(group.parent)"
+            />
           </view>
           <view
             v-for="child in group.children"
@@ -31,7 +39,15 @@
             class="row child"
           >
             <text class="name">{{ child.name }}</text>
-            <text class="delete" @tap="handleDelete(child)">🗑</text>
+            <AppIcon
+              class="delete"
+              name="delete"
+              tone="red"
+              :size="18"
+              :tile-size="48"
+              :radius="12"
+              @tap="handleDelete(child)"
+            />
           </view>
           <view class="add-child" @tap="createChild(group.parent.id)">+ 添加二级分类</view>
         </view>
@@ -53,6 +69,7 @@ import {
   fetchBossCategories,
   type CategoryItem,
 } from '../../../api/product'
+import AppIcon from '../../../components/AppIcon.vue'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
@@ -218,8 +235,9 @@ function handleDelete(item: CategoryItem) {
 }
 
 .delete {
-  font-size: 32rpx;
-  padding: 8rpx;
+  width: 56rpx;
+  height: 48rpx;
+  border-radius: 12rpx;
 }
 
 .add-child {

@@ -9,10 +9,12 @@ onLaunch(() => {
 
 <style lang="scss">
 @import 'uview-plus/index.scss';
+@import './styles/readable-ui.scss';
 
 page {
-  background-color: #f5f6f7;
-  font-size: 28rpx;
-  color: #333;
+  height: 100%;
+  background-color: #f5f7f3;
+  font-size: 30rpx;
+  color: #17211b;
 }
 </style>

@@ -97,6 +97,13 @@
       }
     },
     {
+      "path": "pages/boss/sales-order/select-customer",
+      "style": {
+        "navigationBarTitleText": "选择客户",
+        "disableScroll": true
+      }
+    },
+    {
       "path": "pages/boss/sales-order/products",
       "style": {
         "navigationBarTitleText": "商品库",

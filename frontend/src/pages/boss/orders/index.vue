@@ -2,7 +2,7 @@
   <view class="page">
     <view class="search-bar">
       <view class="search-input-wrap">
-        <text class="search-icon">🔍</text>
+        <AppIcon class="search-icon" name="search" tone="green" :tile="false" :size="19" />
         <input
           v-model="keyword"
           class="search-input"
@@ -12,7 +12,7 @@
         />
       </view>
       <view class="filter-btn" @tap="showFilterTip">
-        <text class="filter-icon">☰</text>
+        <AppIcon class="filter-icon" name="filter" tone="gray" :size="20" :tile-size="48" :radius="14" />
       </view>
     </view>
 
@@ -29,7 +29,7 @@
         </view>
       </view>
       <view class="batch-btn" @tap="showBatchTip">
-        <text class="batch-icon">☰</text>
+        <AppIcon class="batch-icon" name="batch" tone="gray" :tile="false" :size="18" />
         <text>批量</text>
       </view>
     </view>
@@ -51,6 +51,10 @@
 
     <view v-else-if="displayOrders.length === 0" class="empty-wrap">
       <u-empty mode="order" text="暂无订单" />
+      <view class="empty-actions">
+        <button class="empty-primary" @tap="goSalesOrder">新建订单</button>
+        <button class="empty-secondary" @tap="refresh">刷新</button>
+      </view>
     </view>
 
     <view v-else class="list">
@@ -124,6 +128,7 @@
 import { onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import { fetchBossOrders, type OrderInfo } from '../../../api/order'
+import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
 import { useUserStore } from '../../../stores/user'
 
@@ -310,6 +315,10 @@ function goPrintPage(id: number) {
   uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${id}` })
 }
 
+function goSalesOrder() {
+  uni.navigateTo({ url: '/pages/boss/sales-order/index' })
+}
+
 function showBatchTip() {
   uni.showToast({ title: '批量功能开发中', icon: 'none' })
 }
@@ -327,7 +336,7 @@ function showDateTip() {
 .page {
   min-height: 100vh;
   background: #f5f6f8;
-  padding-bottom: calc(140rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(116rpx + env(safe-area-inset-bottom));
 }
 
 .search-bar {
@@ -350,8 +359,10 @@ function showDateTip() {
 
 .search-icon {
   margin-right: 12rpx;
-  font-size: 28rpx;
-  color: #999;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 12rpx;
+  background: #eef2ed;
 }
 
 .search-input {
@@ -368,8 +379,9 @@ function showDateTip() {
 }
 
 .filter-icon {
-  font-size: 36rpx;
-  color: #666;
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 14rpx;
 }
 
 .tab-row {
@@ -419,7 +431,10 @@ function showDateTip() {
 }
 
 .batch-icon {
-  font-size: 28rpx;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 12rpx;
+  background: #eef2ed;
 }
 
 .date-row {
@@ -464,8 +479,46 @@ function showDateTip() {
 
 .loading-wrap,
 .empty-wrap {
-  padding: 120rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 88rpx 24rpx 40rpx;
   text-align: center;
+  box-sizing: border-box;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.empty-primary,
+.empty-secondary {
+  width: 176rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.empty-primary {
+  color: #fff;
+  background: #07c160;
+}
+
+.empty-secondary {
+  color: #0b7f3a;
+  background: #e7f4ea;
+}
+
+.empty-primary::after,
+.empty-secondary::after {
+  border: none;
 }
 
 .list {

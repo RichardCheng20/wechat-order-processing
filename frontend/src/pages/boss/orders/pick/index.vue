@@ -72,19 +72,19 @@
 
       <view class="boss-bottom-bar">
         <view class="boss-tool-item" @tap="handleFillQty">
-          <text class="boss-tool-icon">⚖️</text>
+          <AppIcon class="boss-tool-icon" name="scale" tone="green" :size="22" :tile-size="54" :radius="14" />
           <text class="boss-tool-label">一键称重</text>
         </view>
         <view class="boss-tool-item" @tap="handleFetchPrices">
-          <text class="boss-tool-icon">💴</text>
+          <AppIcon class="boss-tool-icon" name="pricing" tone="green" :size="22" :tile-size="54" :radius="14" />
           <text class="boss-tool-label">获取价格</text>
         </view>
         <view class="boss-tool-item" @tap="showComingSoon('蓝牙称')">
-          <text class="boss-tool-icon">📶</text>
+          <AppIcon class="boss-tool-icon" name="bluetooth" tone="green" :size="22" :tile-size="54" :radius="14" />
           <text class="boss-tool-label">蓝牙称</text>
         </view>
         <view class="boss-tool-item" @tap="showComingSoon('打印标签')">
-          <text class="boss-tool-icon">🏷️</text>
+          <AppIcon class="boss-tool-icon" name="tag" tone="green" :size="22" :tile-size="54" :radius="14" />
           <text class="boss-tool-label">打印标签</text>
         </view>
         <button class="boss-primary-btn" :loading="completing" @tap="handleComplete">完成</button>
@@ -105,6 +105,7 @@ import {
   updateBossPickItem,
 } from '../../../../api/pick'
 import type { OrderInfo, OrderLineItem } from '../../../../api/order'
+import AppIcon from '../../../../components/AppIcon.vue'
 import { useUserStore } from '../../../../stores/user'
 
 type FieldType = 'actualQty' | 'dealPrice'

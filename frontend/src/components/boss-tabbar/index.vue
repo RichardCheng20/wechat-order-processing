@@ -1,19 +1,29 @@
 <template>
-  <view class="boss-tabbar">
-    <view
-      v-for="item in tabs"
-      :key="item.key"
-      class="tab-item"
-      :class="{ center: item.key === 'add', active: active === item.key }"
-      @tap="handleTap(item)"
-    >
-      <view v-if="item.key === 'add'" class="add-btn">
-        <text class="add-icon">+</text>
+  <view class="boss-tabbar-shell">
+    <view class="boss-tabbar">
+      <view
+        v-for="item in tabs"
+        :key="item.key"
+        class="tab-item"
+        :class="{ center: item.key === 'add', active: active === item.key }"
+        @tap="handleTap(item)"
+      >
+        <view v-if="item.key === 'add'" class="add-btn">
+          <text class="add-icon">+</text>
+        </view>
+        <template v-else>
+          <AppIcon
+            class="tab-icon"
+            :name="item.icon"
+            tone="green"
+            :size="23"
+            :tile-size="50"
+            :radius="16"
+            :active="active === item.key"
+          />
+          <text class="tab-text" :class="{ active: active === item.key }">{{ item.label }}</text>
+        </template>
       </view>
-      <template v-else>
-        <text class="tab-icon">{{ item.icon }}</text>
-        <text class="tab-text" :class="{ active: active === item.key }">{{ item.label }}</text>
-      </template>
     </view>
 
     <u-popup
@@ -31,9 +41,14 @@
             class="quick-item"
             @tap="handleQuickTap(item)"
           >
-            <view class="quick-icon" :class="item.color">
-              <text class="quick-icon-text">{{ item.icon }}</text>
-            </view>
+            <AppIcon
+              class="quick-icon"
+              :name="item.icon"
+              :tone="item.color"
+              :size="32"
+              :tile-size="112"
+              :radius="24"
+            />
             <text class="quick-label">{{ item.label }}</text>
           </view>
         </view>
@@ -45,6 +60,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import AppIcon from '../AppIcon.vue'
 
 export type BossTabKey = 'orders' | 'pricing' | 'procurement' | 'mine'
 
@@ -59,7 +75,7 @@ interface QuickItem {
   key: string
   label: string
   icon: string
-  color: 'green' | 'blue' | 'yellow' | 'purple'
+  color: 'green' | 'blue' | 'orange' | 'purple'
   url: string
 }
 
@@ -70,18 +86,18 @@ const props = defineProps<{
 const showQuickMenu = ref(false)
 
 const tabs: TabItem[] = [
-  { key: 'orders', label: '订单', icon: '📋', url: '/pages/boss/orders/index' },
-  { key: 'pricing', label: '录价', icon: '✏️', url: '/pages/boss/pricing/index' },
+  { key: 'orders', label: '订单', icon: 'order', url: '/pages/boss/orders/index' },
+  { key: 'pricing', label: '录价', icon: 'pricing', url: '/pages/boss/pricing/index' },
   { key: 'add', label: '', icon: '+' },
-  { key: 'procurement', label: '采购', icon: '🛒', url: '/pages/boss/procurement/index' },
-  { key: 'mine', label: '我的', icon: '👤', url: '/pages/boss/mine/index' },
+  { key: 'procurement', label: '采购', icon: 'procurement', url: '/pages/boss/procurement/index' },
+  { key: 'mine', label: '我的', icon: 'mine', url: '/pages/boss/mine/index' },
 ]
 
 const quickItems: QuickItem[] = [
-  { key: 'sales-order', label: '销售开单', icon: '📝', color: 'green', url: '/pages/boss/sales-order/index' },
-  { key: 'sales-payment', label: '销售记账', icon: '¥', color: 'blue', url: '/pages/boss/sales-payment/index' },
-  { key: 'purchase-order', label: '采购开单', icon: '🛒', color: 'yellow', url: '/pages/boss/purchase-order/index' },
-  { key: 'purchase-payment', label: '采购记账', icon: '¥', color: 'purple', url: '/pages/boss/purchase-payment/index' },
+  { key: 'sales-order', label: '销售开单', icon: 'salesOrder', color: 'green', url: '/pages/boss/sales-order/index' },
+  { key: 'sales-payment', label: '销售记账', icon: 'salesPayment', color: 'blue', url: '/pages/boss/sales-payment/index' },
+  { key: 'purchase-order', label: '采购开单', icon: 'purchaseOrder', color: 'orange', url: '/pages/boss/purchase-order/index' },
+  { key: 'purchase-payment', label: '采购记账', icon: 'purchasePayment', color: 'purple', url: '/pages/boss/purchase-payment/index' },
 ]
 
 function handleTap(item: TabItem) {
@@ -111,13 +127,13 @@ function handleQuickTap(item: QuickItem) {
   bottom: 0;
   z-index: 999;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-around;
-  height: calc(112rpx + env(safe-area-inset-bottom));
-  padding: 0 8rpx env(safe-area-inset-bottom);
-  background: #2f3033;
-  border-radius: 24rpx 24rpx 0 0;
-  box-shadow: 0 -4rpx 24rpx rgba(0, 0, 0, 0.12);
+  height: calc(98rpx + env(safe-area-inset-bottom));
+  padding: 6rpx 8rpx calc(6rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1rpx solid #dce6df;
+  box-shadow: 0 -4rpx 24rpx rgba(23, 33, 27, 0.08);
 }
 
 .tab-item {
@@ -126,40 +142,37 @@ function handleQuickTap(item: QuickItem) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 96rpx;
+  min-height: 82rpx;
+  gap: 4rpx;
 }
 
 .tab-item.center {
   position: relative;
-  top: -30rpx;
+  top: -22rpx;
 }
 
 .tab-icon {
-  font-size: 38rpx;
-  line-height: 1;
-  opacity: 0.85;
-}
-
-.tab-item.active .tab-icon {
-  opacity: 1;
+  width: 50rpx;
+  height: 50rpx;
+  border-radius: 16rpx;
 }
 
 .tab-text {
-  margin-top: 6rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 24rpx;
+  color: #66736b;
+  line-height: 1.15;
 }
 
 .tab-text.active {
-  color: #fff;
-  font-weight: 600;
+  color: #17211b;
+  font-weight: 700;
 }
 
 .add-btn {
-  width: 104rpx;
-  height: 104rpx;
+  width: 92rpx;
+  height: 92rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #07c160, #06ad56);
+  background: #0b7f3a;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -167,7 +180,7 @@ function handleQuickTap(item: QuickItem) {
 }
 
 .add-icon {
-  font-size: 60rpx;
+  font-size: 54rpx;
   color: #fff;
   line-height: 1;
   margin-top: -4rpx;
@@ -180,7 +193,7 @@ function handleQuickTap(item: QuickItem) {
 
 .quick-grid {
   display: flex;
-  justify-content: space-around;
+  justify-content: space-between;
   padding: 0 8rpx 32rpx;
 }
 
@@ -194,28 +207,14 @@ function handleQuickTap(item: QuickItem) {
 .quick-icon {
   width: 112rpx;
   height: 112rpx;
-  border-radius: 28rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.quick-icon.green { background: #07c160; }
-.quick-icon.blue { background: #3b8cff; }
-.quick-icon.yellow { background: #f5b731; }
-.quick-icon.purple { background: #9b59ff; }
-
-.quick-icon-text {
-  font-size: 44rpx;
-  color: #fff;
-  font-weight: 600;
-  line-height: 1;
+  border-radius: 24rpx;
 }
 
 .quick-label {
   margin-top: 16rpx;
-  font-size: 26rpx;
-  color: #333;
+  font-size: 28rpx;
+  color: #17211b;
+  font-weight: 600;
 }
 
 .quick-cancel {
@@ -223,8 +222,8 @@ function handleQuickTap(item: QuickItem) {
   line-height: 96rpx;
   text-align: center;
   font-size: 32rpx;
-  color: #333;
-  background: #f5f6f7;
+  color: #17211b;
+  background: #f5f7f3;
   border-radius: 16rpx;
 }
 </style>

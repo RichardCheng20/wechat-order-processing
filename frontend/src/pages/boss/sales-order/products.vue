@@ -1,13 +1,19 @@
 <template>
   <view class="page">
     <view class="search-box">
-      <u-search
-        v-model="keyword"
-        placeholder="搜索商品名称/产品编号"
-        :show-action="false"
-        @search="loadProducts"
-        @clear="loadProducts"
-      />
+      <view class="search-wrap">
+        <text class="search-icon">⌕</text>
+        <input
+          class="search-input"
+          type="text"
+          :value="keyword"
+          placeholder="搜索商品名称/产品编号"
+          confirm-type="search"
+          @input="onKeywordInput"
+          @confirm="loadProducts"
+        />
+        <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
+      </view>
     </view>
 
     <view class="main boss-main-fill">
@@ -46,12 +52,11 @@
           <u-loading-icon text="加载中" />
         </view>
         <view v-else-if="products.length === 0" class="empty-wrap">
-          <text class="empty-icon">🛒</text>
           <text class="empty-title">{{ emptyTitle }}</text>
           <text class="empty-hint">{{ emptyHint }}</text>
           <view v-if="showGoManage" class="empty-btn" @tap="goNewProduct">去商品管理</view>
         </view>
-        <view v-else class="product-list boss-scroll-with-footer">
+        <view v-else class="product-list">
           <view
             v-for="item in products"
             :key="item.id"
@@ -60,22 +65,10 @@
             @tap="openEntry(item)"
           >
             <view class="product-info">
-              <view class="name-row">
-                <text class="product-name">{{ item.name }}</text>
-                <text v-if="cartCount(item.id) > 0" class="picked-badge">已选{{ cartCount(item.id) }}</text>
-              </view>
-              <text class="product-price">
-                {{ formatPrice(item.defaultPrice) }}元
-                <text class="price-sep">·</text>
-                {{ formatSaleUnits(item) }}
+              <text class="product-name">{{ item.name }}</text>
+              <text v-if="showProductPrice(item)" class="product-price">
+                {{ formatPrice(item.defaultPrice) }} 元/{{ formatSaleUnits(item) }}
               </text>
-              <view class="unit-tags">
-                <text
-                  v-for="u in parseSaleUnits(item.saleUnits, item.unit)"
-                  :key="u"
-                  class="unit-tag"
-                >{{ u }}</text>
-              </view>
             </view>
             <view class="add-btn" :class="{ picked: cartCount(item.id) > 0 }" @tap.stop="openEntry(item)">+</view>
           </view>
@@ -84,7 +77,7 @@
       </view>
     </view>
 
-    <view class="bottom-bar boss-bottom-bar">
+    <view class="bottom-bar boss-bottom-bar boss-bottom-bar--static">
       <view class="selected-wrap" @tap="toggleSelectedPanel">
         <text class="selected">已选{{ salesOrder.totalKinds }}种</text>
         <text class="selected-arrow">{{ showSelectedPanel ? '▲' : '▼' }}</text>
@@ -207,7 +200,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onShow } from '@dcloudio/uni-app'
 import { filterUnits, parseSaleUnits } from '../../../constants/units'
 import { fetchBossCategories, fetchBossProducts, type CategoryItem, type ProductItem } from '../../../api/product'
 import { buildPrimarySidebar, getParentCategory } from '../../../utils/category'
@@ -274,22 +267,23 @@ const entryTotal = computed(() => {
   return (qty * price).toFixed(2)
 })
 
-onLoad(() => {
-  if (!salesOrder.customer?.name && !salesOrder.editOrderId) {
-    uni.showToast({ title: '请先输入客户名称', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 500)
-  }
-})
-
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
     uni.reLaunch({ url: '/pages/login/index' })
     return
   }
-  uni.setNavigationBarTitle({ title: salesOrder.customer?.name || '商品库' })
   categories.value = await fetchBossCategories()
   await loadProducts()
 })
+
+function onKeywordInput(e: { detail: { value: string } }) {
+  keyword.value = e.detail.value
+}
+
+function clearKeyword() {
+  keyword.value = ''
+  loadProducts()
+}
 
 async function loadProducts() {
   loading.value = true
@@ -330,6 +324,10 @@ function switchSubCategory(key: string) {
 function formatPrice(value?: number) {
   if (value == null) return '0'
   return Number(value).toFixed(0)
+}
+
+function showProductPrice(item: ProductItem) {
+  return item.defaultPrice != null && Number(item.defaultPrice) > 0
 }
 
 function cartCount(productId: number) {
@@ -474,6 +472,9 @@ function confirmEntry() {
 }
 
 function handleDone() {
+  if (!salesOrder.customer?.name && !salesOrder.editOrderId) {
+    uni.showToast({ title: '返回后请先选择客户', icon: 'none' })
+  }
   uni.navigateBack()
 }
 
@@ -500,8 +501,48 @@ function goNewProduct() {
   flex-shrink: 0;
 }
 
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 24rpx;
+  font-size: 28rpx;
+  color: #999;
+  z-index: 1;
+}
+
+.search-input {
+  flex: 1;
+  height: 72rpx;
+  padding: 0 64rpx 0 64rpx;
+  background: #fff;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  color: #222;
+  box-sizing: border-box;
+}
+
+.search-clear {
+  position: absolute;
+  right: 20rpx;
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  font-size: 32rpx;
+  color: #bbb;
+}
+
 .main {
+  flex: 1;
+  min-height: 0;
   flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .categories {
@@ -531,6 +572,8 @@ function goNewProduct() {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  background: #fff;
 }
 
 .sub-cat-scroll {
@@ -569,33 +612,33 @@ function goNewProduct() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 32rpx 24rpx;
+  padding: 24rpx 24rpx;
   border-bottom: 1rpx solid #f0f0f0;
+  gap: 16rpx;
+  min-height: 96rpx;
+  box-sizing: border-box;
 }
 
 .product-row.selected {
   background: #f8fcf9;
 }
 
-.name-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
+.product-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .product-name {
+  display: block;
   font-size: 32rpx;
   font-weight: 500;
   color: #222;
-}
-
-.picked-badge {
-  flex-shrink: 0;
-  padding: 4rpx 12rpx;
-  font-size: 20rpx;
-  color: #07c160;
-  background: #e8f8ef;
-  border-radius: 999rpx;
+  line-height: 1.35;
 }
 
 .product-price {
@@ -603,25 +646,7 @@ function goNewProduct() {
   margin-top: 8rpx;
   font-size: 26rpx;
   color: #999;
-}
-
-.price-sep {
-  margin: 0 6rpx;
-}
-
-.unit-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8rpx;
-  margin-top: 10rpx;
-}
-
-.unit-tag {
-  padding: 4rpx 14rpx;
-  font-size: 22rpx;
-  color: #07c160;
-  background: #f0faf4;
-  border-radius: 999rpx;
+  line-height: 1.35;
 }
 
 .add-btn {
@@ -643,10 +668,6 @@ function goNewProduct() {
 
 .bottom-bar {
   gap: 16rpx;
-}
-
-.bottom-bar.boss-bottom-bar {
-  position: fixed;
 }
 
 .selected-wrap {
@@ -754,9 +775,10 @@ function goNewProduct() {
 }
 
 .empty-icon {
-  display: block;
-  font-size: 56rpx;
-  margin-bottom: 16rpx;
+  display: flex;
+  margin: 0 auto 18rpx;
+  width: 84rpx;
+  height: 84rpx;
 }
 
 .empty-title {

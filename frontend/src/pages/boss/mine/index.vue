@@ -49,27 +49,27 @@
 
       <view class="grid">
         <view class="grid-item" @tap="goProducts">
-          <view class="grid-icon orange">📦</view>
+          <AppIcon class="grid-icon" name="product" tone="orange" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">商品管理</text>
         </view>
         <view class="grid-item" @tap="goCategories">
-          <view class="grid-icon teal">🗂️</view>
+          <AppIcon class="grid-icon" name="category" tone="teal" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">分类管理</text>
         </view>
         <view class="grid-item" @tap="showComingSoon('单位管理')">
-          <view class="grid-icon pink">🏷️</view>
+          <AppIcon class="grid-icon" name="unit" tone="pink" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">单位管理</text>
         </view>
         <view class="grid-item" @tap="goCustomers">
-          <view class="grid-icon green">👥</view>
+          <AppIcon class="grid-icon" name="customer" tone="green" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">客户管理</text>
         </view>
         <view class="grid-item" @tap="goSuppliers">
-          <view class="grid-icon purple">🏭</view>
+          <AppIcon class="grid-icon" name="supplier" tone="purple" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">供应商管理</text>
         </view>
         <view class="grid-item" @tap="showComingSoon('报价单管理')">
-          <view class="grid-icon red">💰</view>
+          <AppIcon class="grid-icon" name="quote" tone="red" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">报价单管理</text>
         </view>
       </view>
@@ -84,7 +84,7 @@
           class="grid-item"
           @tap="showComingSoon(item.label)"
         >
-          <view class="grid-icon" :class="item.color">{{ item.icon }}</view>
+          <AppIcon class="grid-icon" :name="item.icon" :tone="item.color" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">{{ item.label }}</text>
         </view>
       </view>
@@ -99,7 +99,7 @@
           class="grid-item"
           @tap="handleCommonTap(item)"
         >
-          <view class="grid-icon" :class="item.color">{{ item.icon }}</view>
+          <AppIcon class="grid-icon" :name="item.icon" :tone="item.color" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">{{ item.label }}</text>
         </view>
       </view>
@@ -114,6 +114,7 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchBossDashboard, type BossDashboard } from '../../../api/dashboard'
 import { fetchBossProfile, type BossProfile } from '../../../api/profile'
+import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
 import { useUserStore } from '../../../stores/user'
 
@@ -136,20 +137,20 @@ const displaySub = computed(() => profile.value.merchantName || profile.value.re
 const avatarText = computed(() => (displayName.value || '店').slice(0, 1))
 
 const dataPlatformItems = [
-  { label: '客户报表', icon: '¥', color: 'green' },
-  { label: '客户排行', icon: '📊', color: 'purple' },
-  { label: '商品排行', icon: '📈', color: 'red' },
-  { label: '供应商报表', icon: '¥', color: 'orange' },
-  { label: '库存报表', icon: '📊', color: 'blue' },
+  { label: '客户报表', icon: 'report', color: 'green' as const },
+  { label: '客户排行', icon: 'ranking', color: 'purple' as const },
+  { label: '商品排行', icon: 'product', color: 'red' as const },
+  { label: '供应商报表', icon: 'supplier', color: 'orange' as const },
+  { label: '库存报表', icon: 'inventory', color: 'blue' as const },
 ]
 
 const commonItems = [
-  { label: '订货邀请', icon: '🛍️', color: 'green', action: 'invite' },
-  { label: '同事管理', icon: '📇', color: 'blue', action: 'colleague' },
-  { label: '设置', icon: '⚙️', color: 'orange', action: 'settings' },
-  { label: '帮助中心', icon: '❓', color: 'red', action: 'help' },
-  { label: '消息通知', icon: '🔔', color: 'orange', action: 'messages' },
-  { label: '退出登录', icon: '🚪', color: 'gray', action: 'logout' },
+  { label: '订货邀请', icon: 'invite', color: 'green' as const, action: 'invite' },
+  { label: '同事管理', icon: 'colleague', color: 'blue' as const, action: 'colleague' },
+  { label: '设置', icon: 'settings', color: 'orange' as const, action: 'settings' },
+  { label: '帮助中心', icon: 'help', color: 'red' as const, action: 'help' },
+  { label: '消息通知', icon: 'message', color: 'orange' as const, action: 'messages' },
+  { label: '退出登录', icon: 'logout', color: 'gray' as const, action: 'logout' },
 ]
 
 onShow(async () => {
@@ -221,14 +222,15 @@ function handleCommonTap(item: { label: string; action: string }) {
 .page {
   min-height: 100vh;
   padding: 24rpx 24rpx calc(140rpx + env(safe-area-inset-bottom));
-  background: #f5f6f7;
+  background: #f5f7f3;
 }
 
 .profile-card {
   background: #fff;
-  border-radius: 20rpx;
+  border-radius: 16rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #dce6df;
 }
 
 .profile-card:active {
@@ -244,7 +246,7 @@ function handleCommonTap(item: { label: string; action: string }) {
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #07c160, #06ad56);
+  background: #0b7f3a;
   color: #fff;
   font-size: 40rpx;
   font-weight: 700;
@@ -266,6 +268,7 @@ function handleCommonTap(item: { label: string; action: string }) {
 .shop-name {
   font-size: 36rpx;
   font-weight: 700;
+  color: #17211b;
 }
 
 .arrow {
@@ -277,8 +280,8 @@ function handleCommonTap(item: { label: string; action: string }) {
 .shop-sub {
   display: block;
   margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #999;
+  font-size: 26rpx;
+  color: #66736b;
 }
 
 .version-tag {
@@ -286,16 +289,17 @@ function handleCommonTap(item: { label: string; action: string }) {
   margin-top: 20rpx;
   padding: 6rpx 16rpx;
   font-size: 22rpx;
-  color: #666;
-  background: #f3f4f6;
+  color: #66736b;
+  background: #eef2ed;
   border-radius: 999rpx;
 }
 
 .section-card {
   background: #fff;
-  border-radius: 20rpx;
-  padding: 28rpx;
+  border-radius: 16rpx;
+  padding: 26rpx 24rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #dce6df;
 }
 
 .section-head {
@@ -308,6 +312,7 @@ function handleCommonTap(item: { label: string; action: string }) {
 .section-title {
   font-size: 32rpx;
   font-weight: 700;
+  color: #17211b;
 }
 
 .section-title.block {
@@ -316,8 +321,8 @@ function handleCommonTap(item: { label: string; action: string }) {
 }
 
 .section-link {
-  font-size: 24rpx;
-  color: #999;
+  font-size: 26rpx;
+  color: #0b7f3a;
 }
 
 .stats-row {
@@ -331,8 +336,8 @@ function handleCommonTap(item: { label: string; action: string }) {
 
 .stat-label {
   display: block;
-  font-size: 26rpx;
-  color: #888;
+  font-size: 28rpx;
+  color: #66736b;
 }
 
 .stat-value {
@@ -340,11 +345,11 @@ function handleCommonTap(item: { label: string; action: string }) {
   margin-top: 12rpx;
   font-size: 40rpx;
   font-weight: 700;
-  color: #333;
+  color: #17211b;
 }
 
 .stat-value.sales {
-  color: #07c160;
+  color: #0b7f3a;
 }
 
 .stat-divider {
@@ -371,17 +376,17 @@ function handleCommonTap(item: { label: string; action: string }) {
 }
 
 .receivable-item.receivable {
-  background: #fff5f5;
+  background: #fff0ee;
 }
 
 .receivable-item.payable {
-  background: #fff8f0;
+  background: #fff3df;
 }
 
 .receivable-label {
   display: block;
-  font-size: 24rpx;
-  color: #888;
+  font-size: 26rpx;
+  color: #66736b;
 }
 
 .receivable-value {
@@ -395,6 +400,7 @@ function handleCommonTap(item: { label: string; action: string }) {
 .grid {
   display: flex;
   flex-wrap: wrap;
+  row-gap: 6rpx;
 }
 
 .grid.compact .grid-item {
@@ -406,33 +412,24 @@ function handleCommonTap(item: { label: string; action: string }) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20rpx 0;
+  justify-content: flex-start;
+  min-height: 142rpx;
+  padding: 16rpx 0 18rpx;
 }
 
 .grid-icon {
   width: 88rpx;
   height: 88rpx;
-  border-radius: 24rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36rpx;
-  background: #f5f6f7;
+  border-radius: 22rpx;
 }
 
-.grid-icon.green { background: #e8f8ef; }
-.grid-icon.orange { background: #fff3e6; }
-.grid-icon.purple { background: #f3ecff; }
-.grid-icon.teal { background: #e8f7f4; }
-.grid-icon.pink { background: #ffeef5; }
-.grid-icon.red { background: #ffecec; }
-.grid-icon.blue { background: #eef4ff; }
-.grid-icon.gray { background: #f0f0f0; }
-
 .grid-label {
-  margin-top: 12rpx;
-  font-size: 24rpx;
-  color: #555;
+  width: 100%;
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #17211b;
+  font-weight: 600;
   text-align: center;
+  line-height: 1.25;
 }
 </style>

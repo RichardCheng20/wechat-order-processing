@@ -1,17 +1,20 @@
 <template>
   <view class="page boss-page">
     <view class="top-bar">
-      <view class="search-wrap">
-        <input
-          class="search-input"
-          type="text"
-          :value="keyword"
-          placeholder="搜索客户名称"
-          confirm-type="search"
-          @input="onKeywordInput"
-          @confirm="onSearchConfirm"
-        />
-        <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
+      <view class="search-row">
+        <view class="search-wrap">
+          <input
+            class="search-input"
+            type="text"
+            :value="keyword"
+            placeholder="搜索客户名称"
+            confirm-type="search"
+            @input="onKeywordInput"
+            @confirm="onSearchConfirm"
+          />
+          <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
+        </view>
+        <button class="create-top-btn" @tap="showCreate = true">新建</button>
       </view>
 
       <view class="tabs">
@@ -32,7 +35,12 @@
       </view>
     </view>
 
-    <scroll-view scroll-y class="list-scroll boss-page-scroll">
+    <scroll-view
+      scroll-y
+      class="list-scroll"
+      :class="{ 'list-scroll--unsettled': tab === 'unsettled' }"
+      :show-scrollbar="false"
+    >
       <view v-if="loading" class="state-wrap">
         <u-loading-icon text="加载中" />
       </view>
@@ -44,7 +52,7 @@
         />
       </view>
 
-      <view v-else>
+      <view v-else class="list-content">
         <view class="section-title">所有客户</view>
         <view
           v-for="item in displayCustomers"
@@ -67,13 +75,8 @@
             <text class="order-date">下单: {{ formatOrderDate(item.lastOrderAt) }}</text>
           </view>
         </view>
-        <view class="list-end">—— 没有更多了 ——</view>
       </view>
     </scroll-view>
-
-    <view class="boss-bottom-bar boss-bottom-bar--static">
-      <button class="boss-primary-btn block" @tap="showCreate = true">新建客户</button>
-    </view>
 
     <u-popup :show="showCreate" mode="bottom" round="16" @close="showCreate = false">
       <view class="form">
@@ -293,15 +296,32 @@ function formatTime(value: string) {
 <style scoped lang="scss">
 @import '../../../styles/boss-footer.scss';
 
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
 .top-bar {
   flex-shrink: 0;
   background: #fff;
 }
 
-.search-wrap {
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
   position: relative;
   padding: 16rpx 24rpx;
   background: #f5f6f7;
+}
+
+.search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .search-input {
@@ -324,6 +344,23 @@ function formatTime(value: string) {
   text-align: center;
   font-size: 32rpx;
   color: #bbb;
+}
+
+.create-top-btn {
+  width: 128rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 18rpx;
+  background: #07c160;
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.create-top-btn::after {
+  border: none;
 }
 
 .tabs {
@@ -366,7 +403,20 @@ function formatTime(value: string) {
 }
 
 .list-scroll {
+  flex: 1;
+  height: calc(100vh - 176rpx);
+  background: #f5f6f7;
+  box-sizing: border-box;
+}
+
+.list-scroll--unsettled {
+  height: calc(100vh - 248rpx);
+}
+
+.list-content {
+  min-height: 100%;
   background: #fff;
+  box-sizing: border-box;
 }
 
 .state-wrap {
@@ -388,6 +438,7 @@ function formatTime(value: string) {
   padding: 28rpx 24rpx;
   border-bottom: 1rpx solid #f0f0f0;
   gap: 16rpx;
+  background: #fff;
 }
 
 .row-main {
@@ -437,13 +488,6 @@ function formatTime(value: string) {
 .order-date {
   font-size: 22rpx;
   color: #bbb;
-}
-
-.list-end {
-  padding: 40rpx 0 24rpx;
-  text-align: center;
-  font-size: 24rpx;
-  color: #ccc;
 }
 
 .form {

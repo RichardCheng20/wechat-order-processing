@@ -18,6 +18,7 @@
 
       <view class="list">
         <view v-for="item in cartStore.items" :key="`${item.productId}-${item.unit}`" class="card">
+          <AppIcon class="cart-item-icon" name="product" tone="green" :size="25" />
           <view class="main">
             <text class="name">{{ item.name }}</text>
             <text class="unit">{{ item.unit }}</text>
@@ -47,6 +48,7 @@
 import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 import { createCustomerOrder } from '../../../api/order'
+import AppIcon from '../../../components/AppIcon.vue'
 import { useCartStore } from '../../../stores/cart'
 import { useUserStore } from '../../../stores/user'
 
@@ -122,6 +124,7 @@ function goHome() {
   min-height: 100vh;
   padding: 24rpx;
   padding-bottom: 180rpx;
+  background: #f5f7f3;
 }
 
 .empty-wrap {
@@ -131,24 +134,25 @@ function goHome() {
 
 .shop-card {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   padding: 28rpx;
   margin-bottom: 16rpx;
+  border: 1rpx solid #dce6df;
 }
 
 .shop-label {
   display: block;
   margin-bottom: 16rpx;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 600;
-  color: #333;
+  color: #17211b;
 }
 
 .shop-tip {
   display: block;
   margin-top: 12rpx;
-  font-size: 22rpx;
-  color: #999;
+  font-size: 26rpx;
+  color: #66736b;
   line-height: 1.5;
 }
 
@@ -158,64 +162,84 @@ function goHome() {
 
 .card {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 18rpx;
   background: #fff;
-  border-radius: 16rpx;
-  padding: 28rpx;
-  margin-bottom: 16rpx;
+  border-radius: 14rpx;
+  padding: 24rpx;
+  margin-bottom: 14rpx;
+  border: 1rpx solid #dce6df;
+  box-sizing: border-box;
+}
+
+.cart-item-icon {
+  flex-shrink: 0;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
 }
 
 .name {
   display: block;
-  font-size: 32rpx;
-  font-weight: 600;
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #17211b;
 }
 
 .unit {
   display: block;
   margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #999;
+  font-size: 28rpx;
+  color: #66736b;
 }
 
 .side {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 14rpx;
+  flex-shrink: 0;
 }
 
 .qty-btn {
-  width: 52rpx;
-  height: 52rpx;
-  line-height: 52rpx;
+  width: 64rpx;
+  height: 64rpx;
+  line-height: 64rpx;
   text-align: center;
   border-radius: 50%;
-  background: #f2f3f5;
-  font-size: 32rpx;
+  background: #eef2ed;
+  color: #17211b;
+  font-size: 38rpx;
+  font-weight: 800;
 }
 
 .qty-btn.add {
-  background: #27ae60;
+  background: #0b7f3a;
   color: #fff;
 }
 
 .qty {
-  min-width: 40rpx;
+  min-width: 48rpx;
   text-align: center;
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #17211b;
 }
 
 .remark-box {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   padding: 28rpx;
+  border: 1rpx solid #dce6df;
 }
 
 .label {
   display: block;
   margin-bottom: 16rpx;
-  font-size: 28rpx;
-  color: #666;
+  font-size: 30rpx;
+  color: #17211b;
+  font-weight: 700;
 }
 
 .footer {
@@ -225,13 +249,15 @@ function goHome() {
   bottom: 0;
   background: #fff;
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
-  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.06);
+  border-top: 1rpx solid #dce6df;
+  box-shadow: 0 -4rpx 20rpx rgba(23, 33, 27, 0.08);
 }
 
 .summary {
   display: block;
   margin-bottom: 16rpx;
-  font-size: 28rpx;
-  color: #666;
+  font-size: 30rpx;
+  color: #17211b;
+  font-weight: 800;
 }
 </style>

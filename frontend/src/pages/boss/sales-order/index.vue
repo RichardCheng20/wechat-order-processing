@@ -1,6 +1,5 @@
 <template>
   <view class="page boss-page">
-    <scroll-view scroll-y class="boss-page-scroll boss-scroll-with-footer">
     <view class="customer-card">
       <view class="customer-row">
         <view class="customer-input-wrap">
@@ -16,7 +15,32 @@
           />
           <text v-if="salesOrder.customer?.temporary" class="temp-tag">临时</text>
         </view>
-        <text class="arrow" @tap="openCustomerPicker">›</text>
+        <view class="arrow-btn" @tap.stop="openCustomerPicker">
+          <text class="arrow">›</text>
+        </view>
+      </view>
+      <view
+        v-if="showCustomerSuggestions"
+        class="customer-suggestions"
+      >
+        <view
+          v-for="item in suggestionCustomers"
+          :key="item.id"
+          class="suggestion-item"
+          @tap="selectCustomer(item)"
+        >
+          <text class="suggestion-name">{{ item.name }}</text>
+          <text v-if="hasCustomerDebt(item)" class="suggestion-debt">
+            欠款：￥{{ formatCustomerMoney(item.outstandingAmount) }}
+          </text>
+        </view>
+        <view
+          v-if="canUseTemporary"
+          class="suggestion-item temp"
+          @tap="selectTemporaryCustomer"
+        >
+          使用「{{ customerKeyword.trim() }}」临时开单
+        </view>
       </view>
       <view class="delivery-row">
         <text class="delivery-label">配送：{{ deliveryLabel }}</text>
@@ -35,71 +59,74 @@
       </view>
     </view>
 
-    <view class="items-card">
-      <view class="items-head">
-        <text class="items-title">共{{ salesOrder.totalKinds }}种商品</text>
-        <text class="items-action" @tap="showComingSoon('获取价格')">获取价格</text>
-      </view>
-      <view class="table-head">
-        <text class="col-name">商品名</text>
-        <text class="col-qty">下单数</text>
-        <text class="col-unit">单位</text>
-        <text class="col-price">单价(元)</text>
-        <text class="col-op" />
+    <view class="main boss-main-fill">
+      <view class="items-card">
+        <view class="items-head">
+          <text class="items-title">共{{ salesOrder.totalKinds }}种商品</text>
+          <text class="items-action" @tap="showComingSoon('获取价格')">获取价格</text>
+        </view>
+        <view class="table-head">
+          <text class="col-name">商品名</text>
+          <text class="col-qty">下单数</text>
+          <text class="col-unit">单位</text>
+          <text class="col-price">单价(元)</text>
+          <text class="col-op" />
+        </view>
+
+        <scroll-view scroll-y class="items-scroll boss-list-scroll-fill">
+          <view v-if="salesOrder.items.length === 0" class="empty-items">
+            <text class="empty-text">暂无商品，快去录入商品吧</text>
+            <text class="empty-link" @tap="goProducts">去商品库选品</text>
+          </view>
+
+          <view v-for="line in salesOrder.items" :key="line.lineKey" class="table-row">
+            <view class="col-name">
+              <text class="line-name">{{ line.productName }}</text>
+              <text v-if="line.pickRemark" class="line-remark">备注：{{ line.pickRemark }}</text>
+            </view>
+            <view
+              class="col-qty edit-cell"
+              :class="{ active: editingLineKey === line.lineKey && numEditorMode === 'qty' }"
+              @tap="openQtyEditor(line)"
+            >
+              <text class="cell-value">{{ line.orderQty }}</text>
+            </view>
+            <view
+              class="col-unit edit-cell"
+              :class="{ active: unitEditingLineKey === line.lineKey }"
+              @tap="openUnitEditor(line)"
+            >
+              <text class="cell-value">{{ line.unit }}</text>
+            </view>
+            <view
+              class="col-price price-cell"
+              :class="{ empty: line.dealPrice == null, active: editingLineKey === line.lineKey && numEditorMode === 'price' }"
+              @tap="openPriceEditor(line)"
+            >
+              <text v-if="line.dealPrice != null" class="price-value">{{ line.dealPrice }}</text>
+              <text v-else class="price-placeholder">录入</text>
+            </view>
+            <text class="col-op del" @tap="removeLine(line.lineKey)">删</text>
+          </view>
+        </scroll-view>
       </view>
 
-      <view v-if="salesOrder.items.length === 0" class="empty-items">
-        <text class="empty-text">暂无商品，快去录入商品吧</text>
-        <text class="empty-link" @tap="goProducts">去商品库选品</text>
-      </view>
-
-      <view v-for="line in salesOrder.items" :key="line.lineKey" class="table-row">
-        <view class="col-name">
-          <text class="line-name">{{ line.productName }}</text>
-          <text v-if="line.pickRemark" class="line-remark">备注：{{ line.pickRemark }}</text>
-        </view>
-        <view
-          class="col-qty edit-cell"
-          :class="{ active: editingLineKey === line.lineKey && numEditorMode === 'qty' }"
-          @tap="openQtyEditor(line)"
-        >
-          <text class="cell-value">{{ line.orderQty }}</text>
-        </view>
-        <view
-          class="col-unit edit-cell"
-          :class="{ active: unitEditingLineKey === line.lineKey }"
-          @tap="openUnitEditor(line)"
-        >
-          <text class="cell-value">{{ line.unit }}</text>
-        </view>
-        <view
-          class="col-price price-cell"
-          :class="{ empty: line.dealPrice == null, active: editingLineKey === line.lineKey && numEditorMode === 'price' }"
-          @tap="openPriceEditor(line)"
-        >
-          <text v-if="line.dealPrice != null" class="price-value">{{ line.dealPrice }}</text>
-          <text v-else class="price-placeholder">录入</text>
-        </view>
-        <text class="col-op del" @tap="removeLine(line.lineKey)">🗑</text>
+      <view class="remark-bar" @tap="openRemarkInput">
+        <text>{{ salesOrder.remark || '添加订单备注' }}</text>
       </view>
     </view>
-
-    <view class="remark-bar" @tap="openRemarkInput">
-      <text>{{ salesOrder.remark || '添加订单备注' }}</text>
-    </view>
-    </scroll-view>
 
     <view class="boss-bottom-bar">
       <view class="boss-tool-item" @tap="goProducts">
-        <text class="boss-tool-icon">📚</text>
+        <AppIcon class="boss-tool-icon" name="product" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">商品库</text>
       </view>
       <view class="boss-tool-item" @tap="showComingSoon('批量录入')">
-        <text class="boss-tool-icon">▦</text>
+        <AppIcon class="boss-tool-icon" name="batch" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">批量录入</text>
       </view>
       <view class="boss-tool-item" @tap="showComingSoon('语音录入')">
-        <text class="boss-tool-icon">🎤</text>
+        <AppIcon class="boss-tool-icon" name="voice" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">语音录入</text>
       </view>
       <button class="boss-primary-btn" :loading="submitting" @tap="handleSubmit">{{ submitLabel }}</button>
@@ -107,32 +134,46 @@
 
     <u-popup :show="showCustomerPicker" mode="bottom" round="16" @close="closeCustomerPicker">
       <view class="picker-panel">
-        <view class="picker-current">
-          <text class="picker-current-label">当前输入</text>
-          <text class="picker-current-name">{{ customerKeyword.trim() || '未输入' }}</text>
-          <text class="picker-current-tip">名称在上方输入框直接修改</text>
+        <view class="picker-head">
+          <text class="picker-title">选择客户</text>
+          <text class="picker-close" @tap="closeCustomerPicker">×</text>
         </view>
-        <text class="picker-sub">客户匹配</text>
+        <view class="picker-search-wrap">
+          <input
+            class="picker-search"
+            type="text"
+            :value="pickerKeyword"
+            placeholder="搜索客户名称"
+            @input="onPickerKeywordInput"
+          />
+        </view>
+        <text class="picker-sub">所有客户</text>
         <scroll-view scroll-y class="customer-list">
           <view
-            v-if="canUseTemporary"
+            v-if="canUseTemporaryInPicker"
             class="customer-option temp"
             @tap="selectTemporaryCustomer"
           >
-            使用「{{ customerKeyword.trim() }}」临时开单
+            使用「{{ pickerKeyword.trim() }}」临时开单
           </view>
           <view
-            v-for="item in filteredCustomers"
+            v-for="item in pickerCustomers"
             :key="item.id"
             class="customer-option"
             @tap="selectCustomer(item)"
           >
-            {{ item.name }}
+            <text class="customer-option-name">{{ item.name }}</text>
+            <text v-if="hasCustomerDebt(item)" class="customer-option-debt">
+              欠款：￥{{ formatCustomerMoney(item.outstandingAmount) }}
+            </text>
           </view>
-          <view v-if="filteredCustomers.length === 0 && !canUseTemporary" class="no-match">
-            输入客户名称后可临时开单
+          <view v-if="pickerCustomers.length === 0 && !canUseTemporaryInPicker" class="no-match">
+            暂无客户，请先新建
           </view>
         </scroll-view>
+        <view class="picker-footer">
+          <text class="picker-create" @tap="goCreateCustomerPage">新建客户</text>
+        </view>
       </view>
     </u-popup>
 
@@ -216,6 +257,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import { filterUnits, mergeUnits, normalizeUnit, PRESET_UNITS } from '../../../constants/units'
 import { fetchBossCustomers, type CustomerItem } from '../../../api/customer'
 import { createBossOrder, fetchBossOrderDetail, updateBossOrder } from '../../../api/order'
+import AppIcon from '../../../components/AppIcon.vue'
 import { deliveryDateString, formatDeliveryLabel, useSalesOrderStore, type SalesOrderLine } from '../../../stores/salesOrder'
 import { useUserStore } from '../../../stores/user'
 
@@ -223,6 +265,7 @@ const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
 const submitting = ref(false)
 const showCustomerPicker = ref(false)
+const pickerKeyword = ref('')
 const customerKeyword = ref('')
 const allCustomers = ref<CustomerItem[]>([])
 const filteredCustomers = ref<CustomerItem[]>([])
@@ -250,6 +293,29 @@ const canUseTemporary = computed(() => {
   if (!name) return false
   const exact = allCustomers.value.some((c) => c.name === name)
   return !exact
+})
+
+const showCustomerSuggestions = computed(() => {
+  const kw = customerKeyword.value.trim()
+  if (!kw) return false
+  return filteredCustomers.value.length > 0 || canUseTemporary.value
+})
+
+const suggestionCustomers = computed(() => filteredCustomers.value.slice(0, 8))
+
+const pickerCustomers = computed(() => {
+  const kw = pickerKeyword.value.trim().toLowerCase()
+  if (!kw) return allCustomers.value
+  return allCustomers.value.filter((c) => {
+    const hay = `${c.name} ${c.contactName || ''} ${c.phone || ''}`.toLowerCase()
+    return hay.includes(kw)
+  })
+})
+
+const canUseTemporaryInPicker = computed(() => {
+  const name = pickerKeyword.value.trim()
+  if (!name) return false
+  return !allCustomers.value.some((c) => c.name === name)
 })
 
 onLoad((query) => {
@@ -306,18 +372,45 @@ function syncCustomerFromKeyword() {
   const exact = allCustomers.value.find((c) => c.name === name)
   if (exact) {
     salesOrder.setCustomer({ id: exact.id, name: exact.name, temporary: false })
+  } else if (filteredCustomers.value.length === 1) {
+    const only = filteredCustomers.value[0]
+    customerKeyword.value = only.name
+    salesOrder.setCustomer({ id: only.id, name: only.name, temporary: false })
   } else {
     salesOrder.setTemporaryCustomer(name)
   }
 }
 
 function openCustomerPicker() {
+  pickerKeyword.value = customerKeyword.value
   filterCustomers()
   showCustomerPicker.value = true
 }
 
 function closeCustomerPicker() {
   showCustomerPicker.value = false
+}
+
+function onPickerKeywordInput(e: { detail: { value: string } }) {
+  pickerKeyword.value = e.detail.value
+}
+
+function goSelectCustomer() {
+  openCustomerPicker()
+}
+
+function goCreateCustomerPage() {
+  closeCustomerPicker()
+  const kw = encodeURIComponent(pickerKeyword.value.trim() || customerKeyword.value.trim())
+  uni.navigateTo({ url: `/pages/boss/sales-order/select-customer?keyword=${kw}` })
+}
+
+function hasCustomerDebt(item: CustomerItem) {
+  return (item.outstandingAmount || 0) > 0
+}
+
+function formatCustomerMoney(value?: number) {
+  return Number(value || 0).toFixed(2)
 }
 
 function filterCustomers() {
@@ -336,25 +429,21 @@ function filterCustomers() {
 function selectCustomer(item: CustomerItem) {
   customerKeyword.value = item.name
   salesOrder.setCustomer({ id: item.id, name: item.name, temporary: false })
-  closeCustomerPicker()
   filteredCustomers.value = allCustomers.value
+  closeCustomerPicker()
 }
 
 function selectTemporaryCustomer() {
-  const name = customerKeyword.value.trim()
+  const name = (pickerKeyword.value || customerKeyword.value).trim()
   if (!name) return
+  customerKeyword.value = name
   salesOrder.setTemporaryCustomer(name)
-  closeCustomerPicker()
   filteredCustomers.value = allCustomers.value
+  closeCustomerPicker()
 }
 
 function goProducts() {
   syncCustomerFromKeyword()
-  if (!salesOrder.customer?.name) {
-    uni.showToast({ title: '请先输入客户名称', icon: 'none' })
-    openCustomerPicker()
-    return
-  }
   uni.navigateTo({ url: '/pages/boss/sales-order/products' })
 }
 
@@ -501,7 +590,7 @@ async function handleSubmit() {
   syncCustomerFromKeyword()
   if (!salesOrder.customer?.name) {
     uni.showToast({ title: '请输入客户名称', icon: 'none' })
-    openCustomerPicker()
+    goSelectCustomer()
     return
   }
   if (salesOrder.items.length === 0) {
@@ -556,12 +645,37 @@ async function handleSubmit() {
 @import '../../../styles/boss-footer.scss';
 
 .page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
   background: linear-gradient(180deg, #e8f8ef 0%, #f5f6f7 280rpx);
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
 }
 
-.customer-card,
+.customer-card {
+  flex-shrink: 0;
+  margin: 24rpx 24rpx 0;
+  background: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16rpx 24rpx 0;
+  box-sizing: border-box;
+}
+
 .items-card {
-  margin: 24rpx;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 16rpx;
   overflow: hidden;
@@ -616,9 +730,145 @@ async function handleSubmit() {
   color: #ccc;
 }
 
+.arrow-btn {
+  flex-shrink: 0;
+  min-width: 72rpx;
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -12rpx -16rpx -12rpx 0;
+}
+
 .arrow {
   color: #ccc;
-  font-size: 36rpx;
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.picker-panel {
+  padding: 0 0 calc(16rpx + env(safe-area-inset-bottom));
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 16rpx;
+}
+
+.picker-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.picker-close {
+  width: 48rpx;
+  height: 48rpx;
+  line-height: 48rpx;
+  text-align: center;
+  font-size: 40rpx;
+  color: #999;
+}
+
+.picker-search-wrap {
+  padding: 0 32rpx 16rpx;
+}
+
+.picker-search {
+  height: 72rpx;
+  padding: 0 24rpx;
+  background: #f5f6f7;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+}
+
+.picker-sub {
+  display: block;
+  padding: 8rpx 32rpx 12rpx;
+  font-size: 26rpx;
+  color: #999;
+  background: #f5f6f7;
+}
+
+.customer-list {
+  flex: 1;
+  max-height: 52vh;
+}
+
+.customer-option {
+  padding: 24rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.customer-option.temp {
+  color: #07c160;
+  font-weight: 600;
+}
+
+.customer-option-name {
+  display: block;
+  font-size: 32rpx;
+  color: #222;
+}
+
+.customer-option-debt {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: #e67e22;
+}
+
+.no-match {
+  padding: 48rpx;
+  text-align: center;
+  color: #999;
+  font-size: 28rpx;
+}
+
+.picker-footer {
+  padding: 20rpx 32rpx 8rpx;
+  text-align: center;
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.picker-create {
+  font-size: 32rpx;
+  color: #07c160;
+  font-weight: 600;
+}
+
+.customer-suggestions {
+  border-top: 1rpx solid #f2f3f5;
+  background: #fafbfc;
+}
+
+.suggestion-item {
+  padding: 20rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.suggestion-item.temp {
+  color: #07c160;
+  font-size: 28rpx;
+}
+
+.suggestion-name {
+  display: block;
+  font-size: 30rpx;
+  color: #222;
+}
+
+.suggestion-debt {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: #e67e22;
 }
 
 .delivery-row {
@@ -740,8 +990,14 @@ async function handleSubmit() {
   font-size: 28rpx;
 }
 
+.items-scroll {
+  flex: 1;
+  height: 0;
+  background: #fff;
+}
+
 .empty-items {
-  padding: 80rpx 32rpx;
+  padding: 48rpx 32rpx;
   text-align: center;
 }
 
@@ -759,74 +1015,13 @@ async function handleSubmit() {
 }
 
 .remark-bar {
-  margin: 0 24rpx 24rpx;
+  flex-shrink: 0;
+  margin: 16rpx 0 16rpx;
   padding: 24rpx 32rpx;
   background: #eef0f2;
   border-radius: 12rpx;
   font-size: 26rpx;
   color: #888;
-}
-
-.picker-panel {
-  padding: 32rpx 24rpx 48rpx;
-  max-height: 70vh;
-}
-
-.picker-current {
-  padding: 20rpx 8rpx 24rpx;
-  border-bottom: 1rpx solid #f2f3f5;
-  margin-bottom: 8rpx;
-}
-
-.picker-current-label {
-  display: block;
-  font-size: 24rpx;
-  color: #999;
-}
-
-.picker-current-name {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 34rpx;
-  font-weight: 600;
-  color: #222;
-}
-
-.picker-current-tip {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #07c160;
-}
-
-.picker-sub {
-  display: block;
-  margin: 24rpx 8rpx 12rpx;
-  font-size: 26rpx;
-  color: #999;
-}
-
-.customer-list {
-  max-height: 480rpx;
-}
-
-.customer-option.temp {
-  color: #e67e22;
-  font-weight: 600;
-  border-bottom: 1rpx solid #fdebd0;
-}
-
-.customer-option {
-  padding: 24rpx 8rpx;
-  font-size: 32rpx;
-  color: #07c160;
-  border-bottom: 1rpx solid #f5f6f7;
-}
-
-.no-match {
-  padding: 40rpx;
-  text-align: center;
-  color: #999;
 }
 
 .price-mask {

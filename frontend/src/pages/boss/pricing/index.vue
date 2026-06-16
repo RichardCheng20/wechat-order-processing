@@ -2,7 +2,7 @@
   <view class="page" :class="{ 'with-keypad': showKeypad }">
     <view class="search-bar">
       <view class="search-input-wrap">
-        <text class="search-icon">🔍</text>
+        <AppIcon class="search-icon" name="search" tone="green" :tile="false" :size="19" />
         <input
           v-model="keyword"
           class="search-input"
@@ -168,6 +168,7 @@ import {
   type PricingProductLine,
   type PricingProductSummary,
 } from '../../../api/pricing'
+import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
 import { useUserStore } from '../../../stores/user'
 
@@ -517,8 +518,10 @@ function getWeekRange(base: Date) {
 
 .search-icon {
   margin-right: 12rpx;
-  font-size: 28rpx;
-  color: #999;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 12rpx;
+  background: #eef2ed;
 }
 
 .search-input {
