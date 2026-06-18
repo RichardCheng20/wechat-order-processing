@@ -3,6 +3,7 @@ package com.vwholesale.product.controller;
 import com.vwholesale.common.response.ApiResponse;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.product.dto.CategoryCreateRequest;
+import com.vwholesale.product.dto.CategorySortRequest;
 import com.vwholesale.product.dto.CategoryVO;
 import com.vwholesale.product.dto.ProductCreateRequest;
 import com.vwholesale.product.dto.ProductSaleStatusRequest;
@@ -25,7 +26,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import org.springframework.format.annotation.DateTimeFormat;
 
 @Tag(name = "老板端-商品")
 @RestController
@@ -58,6 +63,14 @@ public class BossProductController {
         return ApiResponse.ok(null);
     }
 
+    @Operation(summary = "调整分类排序")
+    @PutMapping("/product-categories/sort")
+    public ApiResponse<Void> sortCategories(@Valid @RequestBody CategorySortRequest request) {
+        RoleChecker.requireBoss();
+        categoryService.reorder(request);
+        return ApiResponse.ok(null);
+    }
+
     @Operation(summary = "商品列表")
     @GetMapping("/products")
     public ApiResponse<List<ProductVO>> products(
@@ -65,6 +78,14 @@ public class BossProductController {
             @RequestParam(required = false) String keyword) {
         RoleChecker.requireBoss();
         return ApiResponse.ok(productService.listForBoss(categoryId, keyword));
+    }
+
+    @Operation(summary = "按日期查询商品基础价（批量录价用）")
+    @GetMapping("/products/daily-prices")
+    public ApiResponse<Map<Long, BigDecimal>> dailyPrices(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        RoleChecker.requireBoss();
+        return ApiResponse.ok(productService.listDailyBasePrices(date));
     }
 
     @Operation(summary = "新建商品")

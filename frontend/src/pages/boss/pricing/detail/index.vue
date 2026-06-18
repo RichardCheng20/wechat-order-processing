@@ -45,14 +45,7 @@
           :loading="submitting"
           @click="handleSubmit"
         />
-        <u-button
-          v-if="canPublish"
-          type="success"
-          text="推送给客户"
-          :loading="publishing"
-          @click="handlePublish"
-        />
-        <u-button v-if="order?.status === 'COMPLETED'" type="success" plain text="已推送给客户" disabled />
+        <u-button v-else type="success" plain text="已录价" disabled />
       </view>
     </view>
   </view>
@@ -61,7 +54,7 @@
 <script setup lang="ts">
 import { onLoad } from '@dcloudio/uni-app'
 import { computed, reactive, ref } from 'vue'
-import { fetchPricingDetail, publishOrderPricing, submitOrderPricing, type PricingLineItem, type PricingOrder } from '../../../../api/pricing'
+import { fetchPricingDetail, submitOrderPricing, type PricingLineItem, type PricingOrder } from '../../../../api/pricing'
 import { useUserStore } from '../../../../stores/user'
 
 const userStore = useUserStore()
@@ -71,8 +64,6 @@ const submitting = ref(false)
 const orderId = ref(0)
 const priceMap = reactive<Record<number, string>>({})
 const readonly = ref(false)
-const canPublish = ref(false)
-const publishing = ref(false)
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
@@ -89,7 +80,6 @@ async function loadOrder() {
   try {
     order.value = await fetchPricingDetail(orderId.value)
     readonly.value = order.value.status === 'PRICED' || order.value.status === 'COMPLETED'
-    canPublish.value = order.value.status === 'PRICED'
     for (const item of order.value.items || []) {
       priceMap[item.id] = String(item.dealPrice ?? item.referencePrice ?? '')
     }
@@ -142,26 +132,11 @@ async function handleSubmit() {
   try {
     order.value = await submitOrderPricing(orderId.value, items)
     readonly.value = true
-    canPublish.value = true
-    uni.showToast({ title: '录价完成，可推送给客户', icon: 'success' })
+    uni.showToast({ title: '录价完成', icon: 'success' })
   } catch (e) {
     uni.showToast({ title: e instanceof Error ? e.message : '提交失败', icon: 'none', duration: 3000 })
   } finally {
     submitting.value = false
-  }
-}
-
-async function handlePublish() {
-  publishing.value = true
-  try {
-    order.value = await publishOrderPricing(orderId.value)
-    canPublish.value = false
-    uni.showToast({ title: '已推送给客户', icon: 'success' })
-    setTimeout(() => uni.navigateBack(), 600)
-  } catch (e) {
-    uni.showToast({ title: e instanceof Error ? e.message : '推送失败', icon: 'none', duration: 3000 })
-  } finally {
-    publishing.value = false
   }
 }
 </script>
@@ -181,13 +156,10 @@ async function handlePublish() {
 
 .content {
   padding: 24rpx;
-  padding-bottom: calc(280rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
 }
 
 .header {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 28rpx;
   margin-bottom: 24rpx;
 }
 
@@ -199,14 +171,14 @@ async function handlePublish() {
 
 .meta {
   display: block;
-  margin-top: 12rpx;
+  margin-top: 8rpx;
   font-size: 26rpx;
-  color: #666;
+  color: #888;
 }
 
 .remark {
   display: block;
-  margin-top: 12rpx;
+  margin-top: 8rpx;
   font-size: 26rpx;
   color: #e67e22;
 }
@@ -214,7 +186,7 @@ async function handlePublish() {
 .item-card {
   background: #fff;
   border-radius: 16rpx;
-  padding: 28rpx;
+  padding: 24rpx;
   margin-bottom: 16rpx;
 }
 
@@ -230,50 +202,47 @@ async function handlePublish() {
 }
 
 .shortage {
-  color: #e74c3c;
-  font-size: 24rpx;
+  font-size: 22rpx;
+  color: #c2352a;
 }
 
 .qty,
+.pick-remark,
 .ref {
   display: block;
   margin-top: 8rpx;
-  font-size: 24rpx;
+  font-size: 26rpx;
   color: #666;
-}
-
-.pick-remark {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #e67e22;
 }
 
 .price-row {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  margin-top: 20rpx;
+  margin-top: 16rpx;
 }
 
 .label {
   font-size: 28rpx;
-  white-space: nowrap;
+  color: #333;
 }
 
 .subtotal {
   display: block;
   margin-top: 12rpx;
   font-size: 28rpx;
-  color: #e67e22;
+  color: #22c55e;
   font-weight: 600;
 }
 
+.footer.column {
+  flex-direction: column;
+  gap: 16rpx;
+}
+
 .total {
-  display: block;
-  margin-bottom: 16rpx;
   font-size: 32rpx;
-  font-weight: 600;
-  color: #27ae60;
+  font-weight: 700;
+  text-align: center;
 }
 </style>

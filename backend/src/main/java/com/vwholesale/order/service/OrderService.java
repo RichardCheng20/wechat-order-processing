@@ -2,6 +2,7 @@ package com.vwholesale.order.service;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.vwholesale.common.context.MerchantContext;
 import com.vwholesale.common.enums.OrderStatus;
 import com.vwholesale.common.enums.UserRole;
@@ -16,11 +17,14 @@ import com.vwholesale.order.dto.BossOrderUpdateRequest;
 import com.vwholesale.order.dto.OrderCreateRequest;
 import com.vwholesale.order.dto.OrderItemCreateRequest;
 import com.vwholesale.order.dto.OrderItemVO;
+import com.vwholesale.order.dto.OrderMarkPaymentRequest;
 import com.vwholesale.order.dto.OrderVO;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.payment.entity.Payment;
+import com.vwholesale.payment.mapper.PaymentMapper;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.product.service.ProductService;
@@ -56,6 +60,7 @@ public class OrderService {
     private final CustomerMapper customerMapper;
     private final ProductMapper productMapper;
     private final WorkerMapper workerMapper;
+    private final PaymentMapper paymentMapper;
     private final MerchantContext merchantContext;
 
     @Transactional
@@ -187,7 +192,9 @@ public class OrderService {
             OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
             OrderStatus.PICKING,
-            OrderStatus.PENDING_PRICE
+            OrderStatus.PICKED,
+            OrderStatus.PENDING_PRICE,
+            OrderStatus.PRICED
     );
 
     @Transactional
@@ -197,13 +204,14 @@ public class OrderService {
         if (OrderStatus.CANCELLED.equals(order.getStatus())) {
             throw BusinessException.of(400, "已取消订单不可修改");
         }
+        if (OrderStatus.COMPLETED.equals(order.getStatus())) {
+            throw BusinessException.of(400, "已完成订单不可修改");
+        }
         if (!BOSS_EDITABLE_STATUSES.contains(order.getStatus())) {
             throw BusinessException.of(400, "当前状态不可修改订单明细");
         }
-        if (order.getAmount() != null) {
-            throw BusinessException.of(400, "已录价订单请先回退状态再修改");
-        }
 
+        String previousStatus = order.getStatus();
         List<BossOrderItemCreateRequest> items = request.getItems();
         Map<Long, Product> productMap = loadProductsForBossUpdate(items);
 
@@ -235,16 +243,36 @@ public class OrderService {
             item.setOrderQty(itemReq.getOrderQty());
             item.setUnit(StringUtils.hasText(itemReq.getUnit()) ? itemReq.getUnit().trim() : product.getUnit());
             item.setPickRemark(itemReq.getPickRemark());
-            if (itemReq.getDealPrice() != null) {
-                item.setDealPrice(itemReq.getDealPrice());
-            }
             item.setShortageFlag(0);
             orderItemMapper.insert(item);
         }
 
-        order.setAmount(null);
-        order.setReceivableAmount(null);
-        orderMapper.updateById(order);
+        String nextStatus = order.getStatus();
+        if (OrderStatus.PRICED.equals(previousStatus)
+                || OrderStatus.PICKED.equals(previousStatus)
+                || OrderStatus.PENDING_PRICE.equals(previousStatus)
+                || OrderStatus.PICKING.equals(previousStatus)) {
+            nextStatus = OrderStatus.PENDING_PICK;
+        }
+
+        LambdaUpdateWrapper<Order> updateWrapper = new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getAmount, null)
+                .set(Order::getReceivableAmount, null)
+                .set(Order::getStatus, nextStatus);
+        if (request.getDeliveryDate() != null) {
+            updateWrapper.set(Order::getDeliveryDate, request.getDeliveryDate());
+        }
+        if (request.getRemark() != null) {
+            updateWrapper.set(Order::getRemark, request.getRemark());
+        }
+        if (order.getCustomerId() == null && StringUtils.hasText(order.getGuestCustomerName())) {
+            updateWrapper
+                    .set(Order::getGuestCustomerName, order.getGuestCustomerName())
+                    .set(Order::getContactName, order.getContactName())
+                    .set(Order::getDeliveryAddressShort, order.getDeliveryAddressShort());
+        }
+        orderMapper.update(null, updateWrapper);
         return getDetail(order.getId());
     }
 
@@ -268,24 +296,25 @@ public class OrderService {
     }
 
     public List<OrderVO> listForBoss(String status, Boolean pricingPending, String keyword,
-                                     String pickFilter, LocalDate deliveryFrom, LocalDate deliveryTo) {
+                                     String pickFilter, String dateType,
+                                     LocalDate dateFrom, LocalDate dateTo,
+                                     LocalDate deliveryFrom, LocalDate deliveryTo,
+                                     Long customerId, String paymentFilter) {
         RoleChecker.requireBoss();
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
                 .ne(Order::getStatus, OrderStatus.CANCELLED)
                 .orderByDesc(Order::getId);
+        if (customerId != null) {
+            wrapper.eq(Order::getCustomerId, customerId);
+        }
         if (Boolean.TRUE.equals(pricingPending)) {
             wrapper.in(Order::getStatus, OrderStatus.PENDING_CONFIRM, OrderStatus.PENDING_PICK, OrderStatus.PENDING_PRICE)
                     .isNull(Order::getAmount);
         } else if (StringUtils.hasText(status)) {
             wrapper.eq(Order::getStatus, status.trim());
         }
-        if (deliveryFrom != null) {
-            wrapper.ge(Order::getDeliveryDate, deliveryFrom);
-        }
-        if (deliveryTo != null) {
-            wrapper.le(Order::getDeliveryDate, deliveryTo);
-        }
+        applyBossDateFilter(wrapper, dateType, dateFrom, dateTo, deliveryFrom, deliveryTo);
         if (StringUtils.hasText(keyword)) {
             List<Long> customerIds = customerMapper.selectList(new LambdaQueryWrapper<Customer>()
                             .eq(Customer::getMerchantId, merchantContext.currentMerchantId())
@@ -303,12 +332,36 @@ public class OrderService {
             }
         }
         List<OrderVO> orders = listOrders(wrapper);
+        if (StringUtils.hasText(paymentFilter) && !"ALL".equalsIgnoreCase(paymentFilter.trim())) {
+            orders = orders.stream()
+                    .filter(vo -> matchesPaymentFilter(vo, paymentFilter.trim()))
+                    .toList();
+        }
         if (!StringUtils.hasText(pickFilter) || "ALL".equalsIgnoreCase(pickFilter)) {
             return orders;
         }
         return orders.stream()
                 .filter(vo -> matchesPickFilter(vo, pickFilter))
                 .toList();
+    }
+
+    private boolean matchesPaymentFilter(OrderVO vo, String paymentFilter) {
+        if (vo.getAmount() == null) {
+            return false;
+        }
+        BigDecimal receivable = vo.getReceivableAmount() != null ? vo.getReceivableAmount() : vo.getAmount();
+        BigDecimal paid = vo.getPaidAmount() != null ? vo.getPaidAmount() : BigDecimal.ZERO;
+        BigDecimal outstanding = receivable.subtract(paid);
+        String filter = paymentFilter.toUpperCase();
+        return switch (filter) {
+            case "UNPAID" -> outstanding.compareTo(BigDecimal.ZERO) > 0;
+            case "PENDING" -> outstanding.compareTo(BigDecimal.ZERO) > 0
+                    && paid.compareTo(BigDecimal.ZERO) <= 0;
+            case "PARTIAL" -> paid.compareTo(BigDecimal.ZERO) > 0
+                    && outstanding.compareTo(BigDecimal.ZERO) > 0;
+            case "PAID", "SETTLED" -> outstanding.compareTo(BigDecimal.ZERO) <= 0;
+            default -> true;
+        };
     }
 
     private boolean matchesPickFilter(OrderVO vo, String pickFilter) {
@@ -321,6 +374,25 @@ public class OrderService {
             return total == 0 || picked < total;
         }
         return true;
+    }
+
+    private void applyBossDateFilter(LambdaQueryWrapper<Order> wrapper, String dateType,
+                                     LocalDate dateFrom, LocalDate dateTo,
+                                     LocalDate deliveryFrom, LocalDate deliveryTo) {
+        LocalDate from = dateFrom != null ? dateFrom : deliveryFrom;
+        LocalDate to = dateTo != null ? dateTo : deliveryTo;
+        if (from == null) {
+            return;
+        }
+        LocalDate end = to != null ? to : from;
+        String type = StringUtils.hasText(dateType) ? dateType.trim() : "DELIVERY";
+        if ("ORDER".equalsIgnoreCase(type)) {
+            wrapper.ge(Order::getCreatedAt, from.atStartOfDay());
+            wrapper.lt(Order::getCreatedAt, end.plusDays(1).atStartOfDay());
+            return;
+        }
+        wrapper.ge(Order::getDeliveryDate, from);
+        wrapper.le(Order::getDeliveryDate, end);
     }
 
     public OrderVO getDetail(Long id) {
@@ -404,15 +476,74 @@ public class OrderService {
         return getDetail(id);
     }
 
+    @Transactional
+    public OrderVO markPaymentByBoss(Long id, OrderMarkPaymentRequest request) {
+        RoleChecker.requireBoss();
+        Order order = getOrderOrThrow(id);
+        if (OrderStatus.CANCELLED.equals(order.getStatus())) {
+            throw BusinessException.of(400, "已取消订单不可收款");
+        }
+        if (order.getCustomerId() == null) {
+            throw BusinessException.of(400, "散客订单请先关联客户");
+        }
+        if (order.getAmount() == null) {
+            throw BusinessException.of(400, "订单尚未录价，无法标记支付");
+        }
+
+        BigDecimal discount = request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO;
+        if (discount.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.of(400, "优惠金额无效");
+        }
+        if (discount.compareTo(order.getAmount()) > 0) {
+            throw BusinessException.of(400, "优惠不能超过销售金额");
+        }
+
+        BigDecimal receivable = order.getAmount().subtract(discount);
+        order.setReceivableAmount(receivable);
+
+        BigDecimal amount = request.getAmount();
+        BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+        BigDecimal outstanding = receivable.subtract(paid);
+        if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+            throw BusinessException.of(400, "该订单已结清");
+        }
+        if (amount.compareTo(outstanding) > 0) {
+            throw BusinessException.of(400, "收款不能超过欠款");
+        }
+
+        order.setPaidAmount(paid.add(amount));
+        orderMapper.updateById(order);
+
+        String method = StringUtils.hasText(request.getMethod()) ? request.getMethod().trim().toUpperCase() : "WECHAT";
+        Payment payment = new Payment();
+        payment.setMerchantId(order.getMerchantId());
+        payment.setCustomerId(order.getCustomerId());
+        payment.setOrderId(order.getId());
+        payment.setAmount(amount);
+        payment.setMethod(method);
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setOperatorUserId(RoleChecker.currentUserId());
+        if (StringUtils.hasText(request.getRemark())) {
+            String remark = request.getRemark().trim();
+            payment.setRemark(remark.length() > 200 ? remark.substring(0, 200) : remark);
+        }
+        paymentMapper.insert(payment);
+
+        return getDetail(id);
+    }
+
     private void clearOrderPricing(Order order) {
-        order.setAmount(null);
-        order.setReceivableAmount(null);
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getAmount, null)
+                .set(Order::getReceivableAmount, null));
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getOrderId, order.getId()));
         for (OrderItem item : items) {
-            item.setDealPrice(null);
-            item.setSubtotalAmount(null);
-            orderItemMapper.updateById(item);
+            orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItem>()
+                    .eq(OrderItem::getId, item.getId())
+                    .set(OrderItem::getDealPrice, null)
+                    .set(OrderItem::getSubtotalAmount, null));
         }
     }
 
@@ -487,8 +618,10 @@ public class OrderService {
             return List.of();
         }
         Set<Long> customerIds = orders.stream().map(Order::getCustomerId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, String> customerNames = customerMapper.selectBatchIds(customerIds).stream()
-                .collect(Collectors.toMap(Customer::getId, Customer::getName));
+        Map<Long, String> customerNames = customerIds.isEmpty()
+                ? Map.of()
+                : customerMapper.selectBatchIds(customerIds).stream()
+                        .collect(Collectors.toMap(Customer::getId, Customer::getName));
 
         List<Long> orderIds = orders.stream().map(Order::getId).toList();
         List<OrderItem> allItems = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds));
@@ -580,6 +713,8 @@ public class OrderService {
                 .pickRemark(item.getPickRemark())
                 .build()).toList();
 
+        int pickedItemCount = (int) items.stream().filter(OrderService::isItemPicked).count();
+
         return OrderVO.builder()
                 .id(order.getId())
                 .orderNo(order.getOrderNo())
@@ -594,10 +729,16 @@ public class OrderService {
                 .contactName(order.getContactName())
                 .contactPhone(order.getContactPhone())
                 .amount(order.getAmount())
+                .paidAmount(order.getPaidAmount())
+                .receivableAmount(receivableAmount(order))
+                .outstandingAmount(outstandingReceivable(order))
+                .priceIncomplete(order.getAmount() == null || isPriceIncomplete(items))
+                .paymentStatusLabel(paymentStatusLabel(order))
                 .remark(order.getRemark())
                 .createdAt(order.getCreatedAt())
                 .items(itemVOs)
                 .itemCount(itemVOs.size())
+                .pickedItemCount(pickedItemCount)
                 .printed(order.getPrintedAt() != null)
                 .build();
     }
@@ -618,6 +759,8 @@ public class OrderService {
                 .contactName(order.getContactName())
                 .amount(order.getAmount())
                 .paidAmount(order.getPaidAmount())
+                .receivableAmount(receivableAmount(order))
+                .outstandingAmount(outstandingReceivable(order))
                 .priceIncomplete(order.getAmount() == null || priceIncomplete)
                 .paymentStatusLabel(paymentStatusLabel(order))
                 .remark(order.getRemark())
@@ -646,17 +789,22 @@ public class OrderService {
     }
 
     private String paymentStatusLabel(Order order) {
-        if (order.getAmount() == null) {
+        BigDecimal receivable = receivableAmount(order);
+        if (receivable == null) {
             return "未支付";
         }
         BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
-        if (paid.compareTo(order.getAmount()) >= 0) {
+        if (paid.compareTo(receivable) >= 0) {
             return "已支付";
         }
         if (paid.compareTo(BigDecimal.ZERO) > 0) {
             return "部分支付";
         }
         return "未支付";
+    }
+
+    private BigDecimal receivableAmount(Order order) {
+        return order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
     }
 
     private String statusLabel(String status) {
@@ -671,7 +819,7 @@ public class OrderService {
             case OrderStatus.DELIVERING -> "配送中";
             case OrderStatus.DELIVERED -> "已送达";
             case OrderStatus.PENDING_PRICE -> "待录价";
-            case OrderStatus.PRICED -> "待推送";
+            case OrderStatus.PRICED -> "已录价";
             case OrderStatus.COMPLETED -> "已完成";
             default -> status;
         };

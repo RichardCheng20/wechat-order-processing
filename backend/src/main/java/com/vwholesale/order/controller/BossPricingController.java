@@ -50,18 +50,20 @@ public class BossPricingController {
     @GetMapping("/pricing/products/{productId}")
     public ApiResponse<PricingProductDetailVO> productPricingDetail(
             @PathVariable Long productId,
+            @RequestParam(required = false) String priceFilter,
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo) {
-        return ApiResponse.ok(orderPricingService.getProductPricingDetail(productId, deliveryFrom, deliveryTo));
+        return ApiResponse.ok(orderPricingService.getProductPricingDetail(productId, deliveryFrom, deliveryTo, priceFilter));
     }
 
     @Operation(summary = "获取商品参考价")
     @PostMapping("/pricing/products/{productId}/fetch-prices")
     public ApiResponse<PricingProductDetailVO> fetchProductPrices(
             @PathVariable Long productId,
+            @RequestParam(required = false) String priceFilter,
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo) {
-        return ApiResponse.ok(orderPricingService.fetchProductReferencePrices(productId, deliveryFrom, deliveryTo));
+        return ApiResponse.ok(orderPricingService.fetchProductReferencePrices(productId, deliveryFrom, deliveryTo, priceFilter));
     }
 
     @Operation(summary = "提交商品录价")

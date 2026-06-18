@@ -48,7 +48,6 @@ export function getCategoryDisplayName(tree: CategoryItem[], categoryId: number)
 export function buildPrimarySidebar(tree: CategoryItem[]): CategorySidebarItem[] {
   const items: CategorySidebarItem[] = [
     { key: 'all', label: '全部', level: 0 },
-    { key: 'uncategorized', label: '未分类', level: 0 },
   ]
   for (const parent of tree) {
     items.push({
@@ -58,6 +57,7 @@ export function buildPrimarySidebar(tree: CategoryItem[]): CategorySidebarItem[]
       level: 1,
     })
   }
+  items.push({ key: 'uncategorized', label: '未分类', level: 0 })
   return items
 }
 
@@ -71,7 +71,6 @@ export function getParentCategory(tree: CategoryItem[], parentKey: string): Cate
 export function buildCategorySidebar(tree: CategoryItem[]): CategorySidebarItem[] {
   const items: CategorySidebarItem[] = [
     { key: 'all', label: '全部', level: 0 },
-    { key: 'uncategorized', label: '未分类', level: 0 },
   ]
   for (const parent of tree) {
     items.push({
@@ -89,6 +88,7 @@ export function buildCategorySidebar(tree: CategoryItem[]): CategorySidebarItem[
       })
     }
   }
+  items.push({ key: 'uncategorized', label: '未分类', level: 0 })
   return items
 }
 

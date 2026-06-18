@@ -52,6 +52,12 @@ public class WorkerTaskController {
         return ApiResponse.ok(dispatchService.updateItem(orderId, itemId, request));
     }
 
+    @Operation(summary = "一键按下单数出库")
+    @PostMapping("/tasks/{id}/fill-qty")
+    public ApiResponse<WorkerTaskVO> fillQty(@PathVariable Long id) {
+        return ApiResponse.ok(dispatchService.fillActualQty(id));
+    }
+
     @Operation(summary = "标记已拣完")
     @PostMapping("/tasks/{id}/picked")
     public ApiResponse<WorkerTaskVO> picked(@PathVariable Long id) {

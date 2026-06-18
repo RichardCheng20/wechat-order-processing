@@ -8,10 +8,10 @@
           class="search-input"
           placeholder="搜索客户名称"
           confirm-type="search"
-          @confirm="refresh"
+          @confirm="confirmFilter"
         />
       </view>
-      <view class="filter-btn" @tap="showFilterTip">
+      <view class="filter-btn" @tap="toggleFilterPanel">
         <AppIcon class="filter-icon" name="filter" tone="gray" :size="20" :tile-size="48" :radius="14" />
       </view>
     </view>
@@ -34,14 +34,23 @@
       </view>
     </view>
 
-    <view class="date-row">
-      <view class="date-range" @tap="showDateTip">
-        <text>配送：{{ dateRangeLabel }}</text>
-        <text class="arrow">▼</text>
+    <view class="date-filter-bar">
+      <view class="date-dropdown" @tap="openFilterPopup">
+        <text class="date-prefix">{{ appliedDateTypeLabel }}：</text>
+        <text class="date-range">{{ appliedRangeLabel }}</text>
+        <text class="date-arrow">▼</text>
       </view>
-      <view class="date-quick">
-        <view class="quick-btn" :class="{ active: quickDate === 'today' }" @tap="setToday">今日</view>
-        <view class="quick-btn" :class="{ active: quickDate === 'tomorrow' }" @tap="setTomorrow">明日</view>
+      <view class="quick-day-tabs">
+        <text
+          class="quick-day"
+          :class="{ active: isQuickActive('today') }"
+          @tap="applyQuickDay('today')"
+        >今日</text>
+        <text
+          class="quick-day"
+          :class="{ active: isQuickActive('tomorrow') }"
+          @tap="applyQuickDay('tomorrow')"
+        >明日</text>
       </view>
     </view>
 
@@ -51,10 +60,6 @@
 
     <view v-else-if="displayOrders.length === 0" class="empty-wrap">
       <u-empty mode="order" text="暂无订单" />
-      <view class="empty-actions">
-        <button class="empty-primary" @tap="goSalesOrder">新建订单</button>
-        <button class="empty-secondary" @tap="refresh">刷新</button>
-      </view>
     </view>
 
     <view v-else class="list">
@@ -66,7 +71,10 @@
         :data-id="item.id"
       >
         <view class="card-head">
-          <text class="customer-name">{{ item.customerName || '未知客户' }}</text>
+          <view class="head-main">
+            <text class="customer-name">{{ item.customerName || '未知客户' }}</text>
+            <text class="order-no">{{ item.orderNo }}</text>
+          </view>
           <text class="pay-status">{{ item.paymentStatusLabel || '未支付' }}</text>
         </view>
 
@@ -91,23 +99,69 @@
           </text>
         </view>
 
-        <view class="card-foot" @tap.stop>
-          <text class="print-status">{{ item.printed ? '已打印' : '未打印' }}</text>
-          <view class="foot-actions">
-            <view class="btn-outline" @tap="handlePrint(item)">打印单据</view>
-            <view
-              v-if="item.showPickBtn"
-              class="btn-primary"
-              @tap="goPick(item.id)"
-            >
-              分拣({{ item.pickedItemCount || 0 }}/{{ item.itemCount || 0 }})
-            </view>
-          </view>
-        </view>
+        <OrderFlowBar :steps="item.flowSteps" @tap="(key) => onFlowTap(key, item)" />
       </view>
+      <view class="list-end">—— 没有更多了 ——</view>
     </view>
 
     <BossTabbar active="orders" />
+
+    <u-popup :show="filterPopupVisible" mode="bottom" round="16" @close="closeFilterPopup">
+      <view class="filter-panel">
+        <view class="filter-panel-head">
+          <text class="filter-title">日期筛选</text>
+          <text class="filter-close" @tap="closeFilterPopup">×</text>
+        </view>
+        <view class="type-row">
+          <view
+            class="type-btn"
+            :class="{ active: draftDateType === 'ORDER' }"
+            @tap="switchDraftDateType('ORDER')"
+          >下单时间</view>
+          <view
+            class="type-btn"
+            :class="{ active: draftDateType === 'DELIVERY' }"
+            @tap="switchDraftDateType('DELIVERY')"
+          >配送时间</view>
+        </view>
+
+        <view class="preset-grid">
+          <view
+            v-for="item in currentPresets"
+            :key="item.key"
+            class="preset-btn"
+            :class="{ active: draftPreset === item.key }"
+            @tap="applyDraftPreset(item.key)"
+          >
+            <text class="preset-label">{{ item.label }}</text>
+            <text v-if="item.sub" class="preset-sub">{{ item.sub }}</text>
+          </view>
+        </view>
+
+        <text class="custom-title">自定义日期</text>
+        <view class="custom-row" @tap="openRangePicker">
+          <text class="custom-date" :class="{ placeholder: !draftFrom }">{{ formatCustomDate(draftFrom) || '起始日期' }}</text>
+          <text class="custom-sep">至</text>
+          <text class="custom-date" :class="{ placeholder: !draftTo }">{{ formatCustomDate(draftTo) || '截止日期' }}</text>
+        </view>
+
+        <view class="filter-actions">
+          <view class="reset-btn" @tap="resetFilter">
+            <text class="reset-icon">⌫</text>
+            <text>重置</text>
+          </view>
+          <button class="confirm-btn" @tap="confirmFilter">确定</button>
+        </view>
+      </view>
+    </u-popup>
+
+    <OrderDateRangePicker
+      :show="rangePickerVisible"
+      :start-date="draftFrom"
+      :end-date="draftTo"
+      @close="rangePickerVisible = false"
+      @confirm="onRangeConfirm"
+    />
 
     <u-modal
       :show="priceModalVisible"
@@ -125,30 +179,50 @@
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import { fetchBossOrders, type OrderInfo } from '../../../api/order'
 import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
+import OrderDateRangePicker from '../../../components/OrderDateRangePicker.vue'
+import OrderFlowBar from '../../../components/OrderFlowBar.vue'
 import { useUserStore } from '../../../stores/user'
+import {
+  buildOrderFlowSteps,
+  isPickDone,
+  isPriced,
+  type FlowStepKey,
+  type OrderFlowStep,
+} from '../../../utils/order-flow'
 
 interface OrderDisplay extends OrderInfo {
   createdAtText: string
   deliveryAtText: string
   amountText: string
-  showPickBtn: boolean
+  flowSteps: OrderFlowStep[]
 }
+
+type DateType = 'ORDER' | 'DELIVERY'
+type PresetKey = 'today' | 'tomorrow' | 'yesterday' | 'last7' | 'last30' | 'custom' | ''
 
 const userStore = useUserStore()
 const orders = ref<OrderInfo[]>([])
 const loading = ref(false)
 const keyword = ref('')
 const pickFilter = ref<'ALL' | 'UNPICKED' | 'PICKED'>('ALL')
-const quickDate = ref<'week' | 'today' | 'tomorrow'>('week')
-const deliveryFrom = ref('')
-const deliveryTo = ref('')
+const filterPopupVisible = ref(false)
+const rangePickerVisible = ref(false)
 const priceModalVisible = ref(false)
 const pendingPrintOrderId = ref(0)
+
+const draftDateType = ref<DateType>('DELIVERY')
+const draftPreset = ref<PresetKey>('')
+const draftFrom = ref('')
+const draftTo = ref('')
+
+const appliedDateType = ref<DateType>('DELIVERY')
+const appliedFrom = ref('')
+const appliedTo = ref('')
 
 const pickTabs = [
   { label: '全部订单', value: 'ALL' as const },
@@ -156,10 +230,23 @@ const pickTabs = [
   { label: '已拣完', value: 'PICKED' as const },
 ]
 
-const dateRangeLabel = computed(() => {
-  if (!deliveryFrom.value || !deliveryTo.value) return '—'
-  return `${formatMonthDay(deliveryFrom.value)}至${formatMonthDay(deliveryTo.value)}`
-})
+const deliveryPresets = computed(() => [
+  { key: 'today' as const, label: '今日' },
+  { key: 'tomorrow' as const, label: '明日' },
+  { key: 'last7' as const, label: '近7日', sub: presetRangeLabel(7) },
+  { key: 'last30' as const, label: '近30日', sub: presetRangeLabel(30) },
+])
+
+const orderPresets = computed(() => [
+  { key: 'today' as const, label: '今日' },
+  { key: 'yesterday' as const, label: '昨日' },
+  { key: 'last7' as const, label: '近7日', sub: presetRangeLabel(7) },
+  { key: 'last30' as const, label: '近30日', sub: presetRangeLabel(30) },
+])
+
+const currentPresets = computed(() =>
+  draftDateType.value === 'ORDER' ? orderPresets.value : deliveryPresets.value,
+)
 
 const displayOrders = computed<OrderDisplay[]>(() =>
   orders.value.map((item) => ({
@@ -167,17 +254,32 @@ const displayOrders = computed<OrderDisplay[]>(() =>
     createdAtText: formatDateTime(item.createdAt),
     deliveryAtText: formatDelivery(item.deliveryDate),
     amountText: formatAmount(item.amount),
-    showPickBtn: calcShowPickBtn(item),
+    flowSteps: buildOrderFlowSteps(item),
   })),
 )
+
+const appliedDateTypeLabel = computed(() =>
+  appliedDateType.value === 'ORDER' ? '下单' : '配送',
+)
+
+const appliedRangeLabel = computed(() => {
+  if (!appliedFrom.value || !appliedTo.value) return '全部'
+  const from = formatShortDate(appliedFrom.value)
+  const to = formatShortDate(appliedTo.value)
+  if (from === to) return from
+  return `${from}至${to}`
+})
+
+onLoad((query) => {
+  if (query?.keyword) {
+    keyword.value = decodeURIComponent(String(query.keyword))
+  }
+})
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
     uni.reLaunch({ url: '/pages/login/index' })
     return
-  }
-  if (!deliveryFrom.value) {
-    applyWeekRange(new Date())
   }
   await refresh()
 })
@@ -185,11 +287,13 @@ onShow(async () => {
 async function refresh() {
   loading.value = true
   try {
+    const hasDateFilter = !!(appliedFrom.value && appliedTo.value)
     orders.value = await fetchBossOrders({
       keyword: keyword.value.trim() || undefined,
       pickFilter: pickFilter.value,
-      deliveryFrom: deliveryFrom.value || undefined,
-      deliveryTo: deliveryTo.value || undefined,
+      dateType: hasDateFilter ? appliedDateType.value : undefined,
+      dateFrom: hasDateFilter ? appliedFrom.value : undefined,
+      dateTo: hasDateFilter ? appliedTo.value : undefined,
     })
   } catch (err) {
     orders.value = []
@@ -208,39 +312,155 @@ function switchPickTab(value: 'ALL' | 'UNPICKED' | 'PICKED') {
   refresh()
 }
 
-function applyWeekRange(base: Date) {
-  const range = getWeekRange(base)
-  deliveryFrom.value = range.from
-  deliveryTo.value = range.to
-  quickDate.value = 'week'
+function switchDraftDateType(type: DateType) {
+  if (draftDateType.value === type) return
+  draftDateType.value = type
+  draftPreset.value = ''
+  draftFrom.value = ''
+  draftTo.value = ''
 }
 
-function setToday() {
+function applyDraftPreset(key: PresetKey) {
+  draftPreset.value = key
+  if (key === 'today') {
+    const today = formatDate(new Date())
+    draftFrom.value = today
+    draftTo.value = today
+    return
+  }
+  if (key === 'tomorrow') {
+    const d = shiftDate(new Date(), 1)
+    draftFrom.value = d
+    draftTo.value = d
+    return
+  }
+  if (key === 'yesterday') {
+    const d = shiftDate(new Date(), -1)
+    draftFrom.value = d
+    draftTo.value = d
+    return
+  }
+  if (key === 'last7') {
+    const range = getLastNDaysRange(7)
+    draftFrom.value = range.from
+    draftTo.value = range.to
+    return
+  }
+  if (key === 'last30') {
+    const range = getLastNDaysRange(30)
+    draftFrom.value = range.from
+    draftTo.value = range.to
+  }
+}
+
+function resetFilter() {
+  draftDateType.value = 'DELIVERY'
+  draftPreset.value = ''
+  draftFrom.value = ''
+  draftTo.value = ''
+  appliedDateType.value = 'DELIVERY'
+  appliedFrom.value = ''
+  appliedTo.value = ''
+  closeFilterPopup()
+  refresh()
+}
+
+function confirmFilter() {
+  if ((draftFrom.value && !draftTo.value) || (!draftFrom.value && draftTo.value)) {
+    uni.showToast({ title: '请完整选择日期范围', icon: 'none' })
+    return
+  }
+  appliedDateType.value = draftDateType.value
+  appliedFrom.value = draftFrom.value
+  appliedTo.value = draftTo.value
+  closeFilterPopup()
+  refresh()
+}
+
+function openFilterPopup() {
+  draftDateType.value = appliedDateType.value
+  draftFrom.value = appliedFrom.value
+  draftTo.value = appliedTo.value
+  draftPreset.value = inferDraftPreset()
+  filterPopupVisible.value = true
+}
+
+function closeFilterPopup() {
+  filterPopupVisible.value = false
+}
+
+function applyQuickDay(day: 'today' | 'tomorrow') {
+  const d = day === 'today' ? formatDate(new Date()) : shiftDate(new Date(), 1)
+  appliedDateType.value = 'DELIVERY'
+  appliedFrom.value = d
+  appliedTo.value = d
+  draftDateType.value = 'DELIVERY'
+  draftFrom.value = d
+  draftTo.value = d
+  draftPreset.value = day
+  refresh()
+}
+
+function isQuickActive(day: 'today' | 'tomorrow') {
+  const d = day === 'today' ? formatDate(new Date()) : shiftDate(new Date(), 1)
+  return appliedDateType.value === 'DELIVERY'
+    && appliedFrom.value === d
+    && appliedTo.value === d
+}
+
+function inferDraftPreset(): PresetKey {
+  if (!draftFrom.value || !draftTo.value) return ''
   const today = formatDate(new Date())
-  deliveryFrom.value = today
-  deliveryTo.value = today
-  quickDate.value = 'today'
-  refresh()
+  const tomorrow = shiftDate(new Date(), 1)
+  const yesterday = shiftDate(new Date(), -1)
+  if (draftFrom.value === today && draftTo.value === today) return 'today'
+  if (draftFrom.value === tomorrow && draftTo.value === tomorrow) return 'tomorrow'
+  if (draftDateType.value === 'ORDER' && draftFrom.value === yesterday && draftTo.value === yesterday) {
+    return 'yesterday'
+  }
+  const last7 = getLastNDaysRange(7)
+  if (draftFrom.value === last7.from && draftTo.value === last7.to) return 'last7'
+  const last30 = getLastNDaysRange(30)
+  if (draftFrom.value === last30.from && draftTo.value === last30.to) return 'last30'
+  return 'custom'
 }
 
-function setTomorrow() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  const tomorrow = formatDate(d)
-  deliveryFrom.value = tomorrow
-  deliveryTo.value = tomorrow
-  quickDate.value = 'tomorrow'
-  refresh()
+function openRangePicker() {
+  rangePickerVisible.value = true
 }
 
-function getWeekRange(base: Date) {
+function onRangeConfirm(payload: { from: string; to: string }) {
+  draftFrom.value = payload.from
+  draftTo.value = payload.to
+  draftPreset.value = 'custom'
+}
+
+function toggleFilterPanel() {
+  openFilterPopup()
+}
+
+function formatShortDate(value: string) {
+  const parts = value.split('-')
+  if (parts.length < 3) return value
+  return `${parts[1]}-${parts[2]}`
+}
+
+function getLastNDaysRange(days: number) {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(to.getDate() - (days - 1))
+  return { from: formatDate(from), to: formatDate(to) }
+}
+
+function shiftDate(base: Date, offset: number) {
   const d = new Date(base)
-  const day = d.getDay() === 0 ? 7 : d.getDay()
-  const monday = new Date(d)
-  monday.setDate(d.getDate() - day + 1)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  return { from: formatDate(monday), to: formatDate(sunday) }
+  d.setDate(d.getDate() + offset)
+  return formatDate(d)
+}
+
+function presetRangeLabel(days: number) {
+  const range = getLastNDaysRange(days)
+  return `${formatDotMonthDay(range.from)}-${formatDotMonthDay(range.to)}`
 }
 
 function formatDate(date: Date) {
@@ -250,10 +470,15 @@ function formatDate(date: Date) {
   return `${y}-${m}-${d}`
 }
 
-function formatMonthDay(value: string) {
+function formatDotMonthDay(value: string) {
   const parts = value.split('-')
   if (parts.length < 3) return value
-  return `${parts[1]}-${parts[2]}`
+  return `${parts[1]}.${parts[2]}`
+}
+
+function formatCustomDate(value: string) {
+  if (!value) return ''
+  return value.replace(/-/g, '.')
 }
 
 function formatDateTime(value?: string) {
@@ -273,10 +498,52 @@ function formatAmount(amount?: number) {
   return ` ¥${Number(amount).toFixed(2)}`
 }
 
-function calcShowPickBtn(item: OrderInfo) {
+const PICKABLE_STATUSES = ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE']
+
+function canPick(item: OrderInfo) {
   const total = item.itemCount || 0
   if (total === 0) return false
-  return !['COMPLETED', 'CANCELLED'].includes(item.status)
+  if (!PICKABLE_STATUSES.includes(item.status)) return false
+  if (item.status === 'PENDING_PRICE' && item.amount != null) return false
+  return true
+}
+
+function onFlowTap(key: FlowStepKey, item: OrderInfo) {
+  switch (key) {
+    case 'confirm':
+      goDetailById(item.id)
+      break
+    case 'pick':
+      if (canPick(item)) {
+        goPick(item.id)
+      } else if (isPickDone(item)) {
+        uni.showToast({ title: '分拣已完成', icon: 'none' })
+      } else {
+        uni.showToast({ title: '当前状态不可分拣', icon: 'none' })
+      }
+      break
+    case 'price':
+      if (!isPickDone(item)) {
+        uni.showToast({ title: '请先完成分拣', icon: 'none' })
+        return
+      }
+      if (isPriced(item)) {
+        goDetailById(item.id)
+      } else {
+        uni.navigateTo({ url: `/pages/boss/pricing/detail/index?id=${item.id}` })
+      }
+      break
+    case 'print':
+      handlePrint(item)
+      break
+    case 'pay':
+      goDetailById(item.id)
+      break
+  }
+}
+
+function goDetailById(id: number) {
+  uni.navigateTo({ url: `/pages/boss/orders/detail/index?id=${id}` })
 }
 
 function goPick(id: number) {
@@ -315,20 +582,8 @@ function goPrintPage(id: number) {
   uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${id}` })
 }
 
-function goSalesOrder() {
-  uni.navigateTo({ url: '/pages/boss/sales-order/index' })
-}
-
 function showBatchTip() {
   uni.showToast({ title: '批量功能开发中', icon: 'none' })
-}
-
-function showFilterTip() {
-  uni.showToast({ title: '筛选功能开发中', icon: 'none' })
-}
-
-function showDateTip() {
-  uni.showToast({ title: '请使用今日/明日快捷筛选', icon: 'none' })
 }
 </script>
 
@@ -437,44 +692,236 @@ function showDateTip() {
   background: #eef2ed;
 }
 
-.date-row {
+.date-filter-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20rpx 24rpx;
+  padding: 16rpx 24rpx;
   background: #fff;
-  margin-bottom: 16rpx;
+  border-bottom: 1rpx solid #eee;
+}
+
+.date-dropdown {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.date-prefix {
+  font-size: 26rpx;
+  color: #666;
+  flex-shrink: 0;
 }
 
 .date-range {
+  font-size: 26rpx;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-arrow {
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.quick-day-tabs {
+  display: flex;
+  gap: 12rpx;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
+.quick-day {
+  padding: 8rpx 24rpx;
+  font-size: 24rpx;
+  color: #666;
+  background: #f5f6f8;
+  border-radius: 999rpx;
+}
+
+.quick-day.active {
+  color: #07c160;
+  background: #e8f8ef;
+  font-weight: 600;
+}
+
+.filter-panel {
+  padding: 24rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  max-height: 78vh;
+  overflow-y: auto;
+}
+
+.filter-panel-head {
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.filter-close {
+  width: 48rpx;
+  height: 48rpx;
+  line-height: 48rpx;
+  text-align: center;
+  font-size: 40rpx;
+  color: #999;
+}
+
+.filter-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #111;
+}
+
+.type-row {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.type-btn {
+  flex: 1;
+  height: 72rpx;
+  line-height: 72rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #666;
+  background: #f5f6f8;
+  border-radius: 12rpx;
+  border: 2rpx solid transparent;
+}
+
+.type-btn.active {
+  color: #07c160;
+  background: #ecfdf3;
+  border-color: #07c160;
+  font-weight: 600;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.preset-btn {
+  min-height: 88rpx;
+  padding: 12rpx 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f5f6f8;
+  border-radius: 12rpx;
+  border: 2rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.preset-btn.active {
+  background: #ecfdf3;
+  border-color: #07c160;
+}
+
+.preset-label {
   font-size: 28rpx;
   color: #333;
 }
 
-.arrow {
-  font-size: 20rpx;
+.preset-btn.active .preset-label {
+  color: #07c160;
+  font-weight: 600;
+}
+
+.preset-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
   color: #999;
 }
 
-.date-quick {
-  display: flex;
-  gap: 12rpx;
+.preset-btn.active .preset-sub {
+  color: #07c160;
 }
 
-.quick-btn {
-  padding: 10rpx 24rpx;
-  font-size: 26rpx;
+.custom-title {
+  display: block;
+  margin-bottom: 16rpx;
+  font-size: 28rpx;
   color: #666;
-  background: #f5f6f8;
-  border-radius: 8rpx;
 }
 
-.quick-btn.active {
-  color: #22c55e;
-  background: #ecfdf3;
+.custom-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+  padding: 24rpx;
+  background: #f5f6f8;
+  border-radius: 12rpx;
+}
+
+.custom-date {
+  flex: 1;
+  text-align: center;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.custom-date.placeholder {
+  color: #bbb;
+}
+
+.custom-sep {
+  font-size: 28rpx;
+  color: #999;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 24rpx;
+}
+
+.reset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 96rpx;
+  font-size: 24rpx;
+  color: #666;
+}
+
+.reset-icon {
+  font-size: 32rpx;
+  line-height: 1;
+  margin-bottom: 4rpx;
+}
+
+.confirm-btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  background: #07c160;
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: 12rpx;
+  border: none;
+}
+
+.confirm-btn::after {
+  border: none;
 }
 
 .loading-wrap,
@@ -488,41 +935,15 @@ function showDateTip() {
   box-sizing: border-box;
 }
 
-.empty-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 24rpx;
-}
-
-.empty-primary,
-.empty-secondary {
-  width: 176rpx;
-  height: 64rpx;
-  line-height: 64rpx;
-  margin: 0;
-  padding: 0;
-  border-radius: 16rpx;
-  font-size: 26rpx;
-  font-weight: 700;
-}
-
-.empty-primary {
-  color: #fff;
-  background: #07c160;
-}
-
-.empty-secondary {
-  color: #0b7f3a;
-  background: #e7f4ea;
-}
-
-.empty-primary::after,
-.empty-secondary::after {
-  border: none;
-}
-
 .list {
   padding: 0 24rpx;
+}
+
+.list-end {
+  padding: 32rpx 0 16rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #ccc;
 }
 
 .card {
@@ -535,13 +956,27 @@ function showDateTip() {
 .card-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+}
+
+.head-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .customer-name {
+  display: block;
   font-size: 34rpx;
   font-weight: 600;
   color: #111;
+}
+
+.order-no {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #999;
+  font-family: monospace;
 }
 
 .pay-status {
@@ -586,42 +1021,5 @@ function showDateTip() {
 
 .price-warn {
   color: #f59e0b;
-}
-
-.card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 24rpx;
-  padding-top: 20rpx;
-  border-top: 1rpx solid #f0f0f0;
-}
-
-.print-status {
-  font-size: 26rpx;
-  color: #999;
-}
-
-.foot-actions {
-  display: flex;
-  gap: 16rpx;
-}
-
-.btn-outline,
-.btn-primary {
-  padding: 12rpx 28rpx;
-  font-size: 26rpx;
-  border-radius: 8rpx;
-}
-
-.btn-outline {
-  color: #22c55e;
-  border: 1rpx solid #22c55e;
-  background: #fff;
-}
-
-.btn-primary {
-  color: #fff;
-  background: #22c55e;
 }
 </style>

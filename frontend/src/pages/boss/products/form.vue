@@ -1,6 +1,28 @@
 <template>
-  <view class="page boss-page">
-    <scroll-view scroll-y class="body boss-page-scroll boss-scroll-with-footer">
+  <view class="page form-page">
+    <view class="form-content boss-scroll-with-footer">
+      <view class="form-card image-card">
+        <view class="image-section">
+          <view class="image-preview-wrap" @tap="chooseImage">
+            <image
+              v-if="form.imageUrl"
+              class="image-preview"
+              :src="displayImageUrl"
+              mode="aspectFill"
+            />
+            <view v-else class="image-placeholder">
+              <text class="plus">+</text>
+              <text>添加图片</text>
+            </view>
+          </view>
+          <view class="image-meta">
+            <text class="image-title">商品图片</text>
+            <text class="image-tip">客户下单时可预览，点击左侧图片可更换</text>
+            <text v-if="form.imageUrl" class="image-remove" @tap.stop="removeImage">移除图片</text>
+          </view>
+        </view>
+      </view>
+
       <view class="form-card">
         <view class="form-row">
           <text class="label">商品名称</text>
@@ -83,7 +105,7 @@
           <switch :checked="form.listOn" color="#07c160" @change="onListToggle" />
         </view>
       </view>
-    </scroll-view>
+    </view>
 
     <view class="boss-bottom-bar">
       <button class="boss-primary-btn block" :loading="saving" @tap="submit">保存</button>
@@ -192,7 +214,9 @@ import {
   type CategoryItem,
   type ProductItem,
 } from '../../../api/product'
+import { uploadPaymentVoucher } from '../../../api/payment'
 import { getCategoryDisplayName, getLeafCategories } from '../../../utils/category'
+import { resolveMediaUrl } from '../../../utils/media'
 import { useUserStore } from '../../../stores/user'
 
 type UnitPickerMode = 'basic' | 'auxiliary' | 'add-aux'
@@ -216,8 +240,11 @@ const form = reactive({
   name: '',
   aliases: '',
   defaultPrice: '',
+  imageUrl: '',
   listOn: true,
 })
+
+const displayImageUrl = computed(() => resolveMediaUrl(form.imageUrl))
 
 const selectedCategoryName = computed(() =>
   getCategoryDisplayName(categories.value, form.categoryId),
@@ -284,6 +311,7 @@ function fillFromProduct(item: ProductItem) {
   form.name = item.name
   form.aliases = item.aliases || ''
   form.defaultPrice = item.defaultPrice != null ? String(item.defaultPrice) : ''
+  form.imageUrl = item.imageUrl || ''
   form.listOn = item.saleStatus === 'ON'
   const units = parseSaleUnits(item.saleUnits, item.unit)
   primaryUnit.value = units[0] || '斤'
@@ -476,6 +504,31 @@ function removeAuxUnit(index: number) {
   auxiliaryUnits.value = auxiliaryUnits.value.filter((_, i) => i !== index)
 }
 
+function chooseImage() {
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: ['album', 'camera'],
+    success: async (res) => {
+      const localPath = res.tempFilePaths[0]
+      if (!localPath) return
+      uni.showLoading({ title: '上传中' })
+      try {
+        form.imageUrl = await uploadPaymentVoucher(localPath)
+        uni.showToast({ title: '图片已更新', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : '上传失败', icon: 'none' })
+      } finally {
+        uni.hideLoading()
+      }
+    },
+  })
+}
+
+function removeImage() {
+  form.imageUrl = ''
+}
+
 async function submit() {
   if (!form.categoryId || !form.name.trim()) {
     uni.showToast({ title: '请填写分类和名称', icon: 'none' })
@@ -493,6 +546,7 @@ async function submit() {
       aliases: form.aliases.trim() || undefined,
       unit: primaryUnit.value,
       saleUnits: saleUnits.value,
+      imageUrl: form.imageUrl || undefined,
       defaultPrice: form.defaultPrice ? Number(form.defaultPrice) : undefined,
       saleStatus: form.listOn ? 'ON' : 'OFF',
     }
@@ -514,25 +568,94 @@ async function submit() {
 <style scoped lang="scss">
 @import '../../../styles/boss-footer.scss';
 
-.page {
+.form-page {
+  min-height: 100vh;
   background: #f5f6f7;
+  box-sizing: border-box;
 }
 
-.body {
+.form-content {
   padding: 0;
 }
 
 .form-card {
-  margin-bottom: 16rpx;
+  margin-bottom: 8rpx;
   background: #fff;
 }
 
+.image-card {
+  padding: 20rpx 32rpx;
+}
+
+.image-section {
+  display: flex;
+  gap: 24rpx;
+  align-items: center;
+}
+
+.image-preview-wrap {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f5f6f7;
+}
+
+.image-preview {
+  width: 100%;
+  height: 100%;
+}
+
+.image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 24rpx;
+  gap: 8rpx;
+}
+
+.image-placeholder .plus {
+  font-size: 48rpx;
+  color: #07c160;
+  line-height: 1;
+}
+
+.image-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.image-title {
+  font-size: 30rpx;
+  color: #222;
+  font-weight: 600;
+}
+
+.image-tip {
+  font-size: 24rpx;
+  color: #999;
+  line-height: 1.5;
+}
+
+.image-remove {
+  font-size: 24rpx;
+  color: #e74c3c;
+  margin-top: 8rpx;
+}
+
 .unit-card {
-  margin-bottom: 16rpx;
+  margin-bottom: 8rpx;
 }
 
 .unit-section-head {
-  padding: 24rpx 32rpx 8rpx;
+  padding: 20rpx 32rpx 8rpx;
   border-bottom: 1rpx solid #f2f3f5;
 }
 
@@ -553,7 +676,7 @@ async function submit() {
 .form-row {
   display: flex;
   align-items: center;
-  min-height: 100rpx;
+  min-height: 88rpx;
   padding: 0 32rpx;
   border-bottom: 1rpx solid #f2f3f5;
 }

@@ -19,6 +19,7 @@ export interface CustomerItem {
   status?: number
   createdAt?: string
   outstandingAmount?: number
+  totalSalesAmount?: number
   lastOrderAt?: string
 }
 
@@ -47,6 +48,21 @@ export function fetchBossCustomers(keyword?: string) {
     url: '/api/boss/customers',
     method: 'GET',
     query: { keyword },
+  })
+}
+
+export function fetchBossCustomerDetail(id: number) {
+  return request<CustomerItem>({
+    url: `/api/boss/customers/${id}`,
+    method: 'GET',
+  })
+}
+
+export function updateBossCustomer(id: number, data: Partial<CustomerCreatePayload> & { status?: number }) {
+  return request<CustomerItem>({
+    url: `/api/boss/customers/${id}`,
+    method: 'PUT',
+    data,
   })
 }
 

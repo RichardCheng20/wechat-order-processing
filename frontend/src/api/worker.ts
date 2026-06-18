@@ -81,6 +81,13 @@ export function updateWorkerTaskItem(
   })
 }
 
+export function fillWorkerTaskQty(id: number) {
+  return request<WorkerTask>({
+    url: `/api/worker/tasks/${id}/fill-qty`,
+    method: 'POST',
+  })
+}
+
 export function completeWorkerTaskPick(id: number) {
   return request<WorkerTask>({
     url: `/api/worker/tasks/${id}/complete-pick`,

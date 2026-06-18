@@ -49,7 +49,15 @@ public class OrderPricingService {
             OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
             OrderStatus.PICKING,
+            OrderStatus.PICKED,
             OrderStatus.PENDING_PRICE
+    );
+
+    private static final Set<String> PRICED_ORDER_STATUSES = Set.of(
+            OrderStatus.PRICED,
+            OrderStatus.COMPLETED,
+            OrderStatus.DELIVERING,
+            OrderStatus.DELIVERED
     );
 
     private final OrderMapper orderMapper;
@@ -137,7 +145,7 @@ public class OrderPricingService {
     public List<PricingProductSummaryVO> listPricingProducts(String keyword, String priceFilter,
                                                              LocalDate deliveryFrom, LocalDate deliveryTo) {
         RoleChecker.requireBoss();
-        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo);
+        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, priceFilter);
         if (workspace.items().isEmpty()) {
             return List.of();
         }
@@ -185,38 +193,17 @@ public class OrderPricingService {
         return summaries;
     }
 
-    public PricingProductDetailVO getProductPricingDetail(Long productId, LocalDate deliveryFrom, LocalDate deliveryTo) {
+    public PricingProductDetailVO getProductPricingDetail(Long productId, LocalDate deliveryFrom, LocalDate deliveryTo,
+                                                        String priceFilter) {
         RoleChecker.requireBoss();
-        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo);
-        Product product = workspace.productMap().get(productId);
-        if (product == null) {
-            throw BusinessException.of(404, "商品不存在或暂无待录价明细");
-        }
-
-        List<OrderItem> productItems = workspace.items().stream()
-                .filter(item -> Objects.equals(item.getProductId(), productId))
-                .toList();
-        if (productItems.isEmpty()) {
-            throw BusinessException.of(404, "该商品暂无待录价明细");
-        }
-
-        List<PricingProductLineVO> lines = buildProductLines(productItems, workspace);
-        Set<Long> orderIds = productItems.stream().map(OrderItem::getOrderId).collect(Collectors.toSet());
-        BigDecimal totalQty = productItems.stream().map(this::itemQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        return PricingProductDetailVO.builder()
-                .productId(productId)
-                .productName(product.getName())
-                .unit(productItems.get(0).getUnit())
-                .orderCount(orderIds.size())
-                .totalQty(totalQty)
-                .lines(lines)
-                .build();
+        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, priceFilter);
+        return buildProductPricingDetail(productId, workspace);
     }
 
-    public PricingProductDetailVO fetchProductReferencePrices(Long productId, LocalDate deliveryFrom, LocalDate deliveryTo) {
+    public PricingProductDetailVO fetchProductReferencePrices(Long productId, LocalDate deliveryFrom,
+                                                              LocalDate deliveryTo, String priceFilter) {
         RoleChecker.requireBoss();
-        PricingProductDetailVO detail = getProductPricingDetail(productId, deliveryFrom, deliveryTo);
+        PricingProductDetailVO detail = getProductPricingDetail(productId, deliveryFrom, deliveryTo, priceFilter);
         List<PricingProductLineVO> filled = detail.getLines().stream()
                 .map(line -> line.getDealPrice() != null
                         ? line
@@ -244,19 +231,15 @@ public class OrderPricingService {
     public PricingProductDetailVO submitProductPricing(Long productId, PricingProductSubmitRequest request,
                                                        LocalDate deliveryFrom, LocalDate deliveryTo) {
         RoleChecker.requireBoss();
-        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo);
-        Product product = workspace.productMap().get(productId);
-        if (product == null) {
-            throw BusinessException.of(404, "商品不存在或暂无待录价明细");
+        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, "UNPRICED");
+        List<OrderItem> productItems = workspace.items().stream()
+                .filter(item -> Objects.equals(item.getProductId(), productId))
+                .toList();
+        if (productItems.isEmpty()) {
+            throw BusinessException.of(404, "该商品暂无待录价明细，请刷新后重试");
         }
 
-        Set<Long> allowedItemIds = workspace.items().stream()
-                .filter(item -> Objects.equals(item.getProductId(), productId))
-                .map(OrderItem::getId)
-                .collect(Collectors.toSet());
-        if (allowedItemIds.isEmpty()) {
-            throw BusinessException.of(404, "该商品暂无待录价明细");
-        }
+        Set<Long> allowedItemIds = productItems.stream().map(OrderItem::getId).collect(Collectors.toSet());
 
         Set<Long> affectedOrderIds = new HashSet<>();
         for (PricingItemRequest priceReq : request.getItems()) {
@@ -281,7 +264,56 @@ public class OrderPricingService {
         for (Long orderId : affectedOrderIds) {
             tryFinalizeOrder(orderId);
         }
-        return getProductPricingDetail(productId, deliveryFrom, deliveryTo);
+        return buildProductPricingDetail(productId, loadPricingWorkspace(deliveryFrom, deliveryTo, "UNPRICED"), true);
+    }
+
+    private PricingProductDetailVO buildProductPricingDetail(Long productId, PricingWorkspace workspace) {
+        return buildProductPricingDetail(productId, workspace, false);
+    }
+
+    private PricingProductDetailVO buildProductPricingDetail(Long productId, PricingWorkspace workspace,
+                                                             boolean allowEmpty) {
+        List<OrderItem> productItems = workspace.items().stream()
+                .filter(item -> Objects.equals(item.getProductId(), productId))
+                .toList();
+        if (productItems.isEmpty()) {
+            Product product = productMapper.selectById(productId);
+            if (product == null || !merchantContext.currentMerchantId().equals(product.getMerchantId())) {
+                throw BusinessException.of(404, "商品不存在");
+            }
+            if (allowEmpty) {
+                return PricingProductDetailVO.builder()
+                        .productId(productId)
+                        .productName(product.getName())
+                        .unit(product.getUnit())
+                        .orderCount(0)
+                        .totalQty(BigDecimal.ZERO)
+                        .lines(List.of())
+                        .build();
+            }
+            throw BusinessException.of(404, "该商品暂无待录价明细，请调整配送日期后刷新");
+        }
+
+        Product product = workspace.productMap().get(productId);
+        if (product == null) {
+            product = productMapper.selectById(productId);
+        }
+        if (product == null) {
+            throw BusinessException.of(404, "商品不存在");
+        }
+
+        List<PricingProductLineVO> lines = buildProductLines(productItems, workspace);
+        Set<Long> orderIds = productItems.stream().map(OrderItem::getOrderId).collect(Collectors.toSet());
+        BigDecimal totalQty = productItems.stream().map(this::itemQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return PricingProductDetailVO.builder()
+                .productId(productId)
+                .productName(product.getName())
+                .unit(productItems.get(0).getUnit())
+                .orderCount(orderIds.size())
+                .totalQty(totalQty)
+                .lines(lines)
+                .build();
     }
 
     @Transactional
@@ -407,8 +439,8 @@ public class OrderPricingService {
         orderMapper.updateById(order);
     }
 
-    private PricingWorkspace loadPricingWorkspace(LocalDate deliveryFrom, LocalDate deliveryTo) {
-        List<Order> orders = listPendingPriceOrders(deliveryFrom, deliveryTo);
+    private PricingWorkspace loadPricingWorkspace(LocalDate deliveryFrom, LocalDate deliveryTo, String priceFilter) {
+        List<Order> orders = listPricingOrders(deliveryFrom, deliveryTo, priceFilter);
         if (orders.isEmpty()) {
             return new PricingWorkspace(List.of(), Map.of(), Map.of(), List.of(), Map.of(), Map.of());
         }
@@ -430,6 +462,46 @@ public class OrderPricingService {
                 : customerMapper.selectBatchIds(customerIds).stream().collect(Collectors.toMap(Customer::getId, c -> c));
 
         return new PricingWorkspace(orders, orderMap, itemMap, items, productMap, customerMap);
+    }
+
+    private List<Order> listPricingOrders(LocalDate deliveryFrom, LocalDate deliveryTo, String priceFilter) {
+        if ("UNPRICED".equalsIgnoreCase(priceFilter)) {
+            return listPendingPriceOrders(deliveryFrom, deliveryTo);
+        }
+        if ("PRICED".equalsIgnoreCase(priceFilter)) {
+            List<Order> pending = listPendingPriceOrders(deliveryFrom, deliveryTo);
+            List<Order> priced = listPricedOrders(deliveryFrom, deliveryTo);
+            return mergeOrders(pending, priced);
+        }
+        List<Order> pending = listPendingPriceOrders(deliveryFrom, deliveryTo);
+        List<Order> priced = listPricedOrders(deliveryFrom, deliveryTo);
+        return mergeOrders(pending, priced);
+    }
+
+    private List<Order> mergeOrders(List<Order> first, List<Order> second) {
+        Map<Long, Order> merged = new java.util.LinkedHashMap<>();
+        for (Order order : first) {
+            merged.put(order.getId(), order);
+        }
+        for (Order order : second) {
+            merged.put(order.getId(), order);
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    private List<Order> listPricedOrders(LocalDate deliveryFrom, LocalDate deliveryTo) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantContext.currentMerchantId())
+                .in(Order::getStatus, PRICED_ORDER_STATUSES)
+                .isNotNull(Order::getAmount)
+                .orderByDesc(Order::getId);
+        if (deliveryFrom != null) {
+            wrapper.ge(Order::getDeliveryDate, deliveryFrom);
+        }
+        if (deliveryTo != null) {
+            wrapper.le(Order::getDeliveryDate, deliveryTo);
+        }
+        return orderMapper.selectList(wrapper);
     }
 
     private List<Order> listPendingPriceOrders(LocalDate deliveryFrom, LocalDate deliveryTo) {
@@ -532,11 +604,14 @@ public class OrderPricingService {
         if (Objects.equals(status, OrderStatus.PENDING_PICK)) {
             return "待分拣";
         }
+        if (Objects.equals(status, OrderStatus.PICKED)) {
+            return "已拣完";
+        }
         if (Objects.equals(status, OrderStatus.PENDING_PRICE)) {
             return "待录价";
         }
         if (Objects.equals(status, OrderStatus.PRICED)) {
-            return "待推送";
+            return "已录价";
         }
         if (Objects.equals(status, OrderStatus.COMPLETED)) {
             return "已完成";

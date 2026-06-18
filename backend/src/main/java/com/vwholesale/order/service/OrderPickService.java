@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -33,13 +34,15 @@ public class OrderPickService {
             OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
             OrderStatus.PICKING,
+            OrderStatus.PICKED,
             OrderStatus.PENDING_PRICE
     );
 
     private static final Set<String> EDITABLE_STATUSES = Set.of(
             OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
-            OrderStatus.PICKING
+            OrderStatus.PICKING,
+            OrderStatus.PICKED
     );
 
     private final OrderMapper orderMapper;
@@ -82,8 +85,9 @@ public class OrderPickService {
             throw BusinessException.of(404, "订单明细不存在");
         }
 
+        BigDecimal previousQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
         if (request.getActualQty() != null) {
-            item.setActualQty(request.getActualQty());
+            item.setActualQty(clampActualQty(item, request.getActualQty()));
         }
         if (request.getDealPrice() != null) {
             if (request.getDealPrice().compareTo(BigDecimal.ZERO) < 0) {
@@ -98,6 +102,8 @@ public class OrderPickService {
             }
         }
         orderItemMapper.updateById(item);
+        BigDecimal newQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
+        applyStockDelta(item.getProductId(), previousQty, newQty);
         return orderService.getDetail(orderId);
     }
 
@@ -108,11 +114,12 @@ public class OrderPickService {
         ensureEditing(order);
         List<OrderItem> items = listItems(orderId);
         for (OrderItem item : items) {
-            if (item.getShortageFlag() != null && item.getShortageFlag() == 1) {
-                continue;
-            }
-            item.setActualQty(item.getOrderQty());
+            BigDecimal previousQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
+            BigDecimal targetQty = item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO;
+            item.setActualQty(targetQty);
+            item.setShortageFlag(0);
             orderItemMapper.updateById(item);
+            applyStockDelta(item.getProductId(), previousQty, targetQty);
         }
         return orderService.getDetail(orderId);
     }
@@ -166,7 +173,9 @@ public class OrderPickService {
                     item.setActualQty(BigDecimal.ZERO);
                 }
             } else if (item.getActualQty() == null) {
-                item.setActualQty(item.getOrderQty());
+                item.setActualQty(BigDecimal.ZERO);
+            } else {
+                item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
             orderItemMapper.updateById(item);
         }
@@ -213,5 +222,37 @@ public class OrderPickService {
             throw BusinessException.of(404, "订单不存在");
         }
         return order;
+    }
+
+    private BigDecimal clampActualQty(OrderItem item, BigDecimal actualQty) {
+        if (actualQty.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.of(400, "出库数量不能为负数");
+        }
+        BigDecimal orderQty = item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO;
+        if (actualQty.compareTo(orderQty) > 0) {
+            throw BusinessException.of(400, "出库数量不能多于下单数量");
+        }
+        return actualQty;
+    }
+
+    private void applyStockDelta(Long productId, BigDecimal previousQty, BigDecimal newQty) {
+        if (productId == null) {
+            return;
+        }
+        BigDecimal before = previousQty != null ? previousQty : BigDecimal.ZERO;
+        BigDecimal after = newQty != null ? newQty : BigDecimal.ZERO;
+        BigDecimal delta = after.subtract(before);
+        if (delta.compareTo(BigDecimal.ZERO) == 0) {
+            return;
+        }
+        Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
+                .eq(Product::getId, productId)
+                .eq(Product::getMerchantId, merchantContext.currentMerchantId()));
+        if (product == null) {
+            return;
+        }
+        BigDecimal stock = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
+        product.setStockQty(stock.subtract(delta).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+        productMapper.updateById(product);
     }
 }

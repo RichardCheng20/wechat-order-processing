@@ -17,6 +17,7 @@ export interface ProductItem {
   unit: string
   saleUnits?: string[]
   spec?: string
+  imageUrl?: string
   defaultPrice?: number
   referencePrice?: number
   saleStatus: string
@@ -29,6 +30,7 @@ export interface ProductCreatePayload {
   unit?: string
   saleUnits?: string[]
   spec?: string
+  imageUrl?: string
   defaultPrice?: number
   saleStatus?: string
 }
@@ -64,11 +66,27 @@ export function deleteBossCategory(id: number) {
   })
 }
 
+export function sortBossCategories(orderedIds: number[], parentId?: number) {
+  return request<void>({
+    url: '/api/boss/product-categories/sort',
+    method: 'PUT',
+    data: { parentId, orderedIds },
+  })
+}
+
 export function fetchBossProducts(params?: { categoryId?: number; keyword?: string }) {
   return request<ProductItem[]>({
     url: '/api/boss/products',
     method: 'GET',
     query: params,
+  })
+}
+
+export function fetchBossDailyPrices(date: string) {
+  return request<Record<string, number>>({
+    url: '/api/boss/products/daily-prices',
+    method: 'GET',
+    query: { date },
   })
 }
 
@@ -79,6 +97,7 @@ export interface ProductUpdatePayload {
   unit?: string
   saleUnits?: string[]
   spec?: string
+  imageUrl?: string
   defaultPrice?: number
   saleStatus?: string
 }

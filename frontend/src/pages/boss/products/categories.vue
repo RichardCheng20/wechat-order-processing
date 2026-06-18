@@ -10,7 +10,7 @@
       />
     </view>
 
-    <scroll-view scroll-y class="list-scroll boss-page-scroll">
+    <scroll-view scroll-y class="list-scroll" :show-scrollbar="false">
       <view v-if="loading" class="state-wrap">
         <u-loading-icon text="加载中" />
       </view>
@@ -54,8 +54,14 @@
       </view>
     </scroll-view>
 
-    <view class="boss-bottom-bar boss-bottom-bar--static">
-      <button class="boss-primary-btn block" @tap="createRoot">新建分类</button>
+    <view class="boss-bottom-bar">
+      <view class="boss-tool-item" @tap="goSort">
+        <view class="boss-tool-icon">
+          <AppIcon name="filter" tone="gray" :size="22" :tile="false" />
+        </view>
+        <text class="boss-tool-label">排序</text>
+      </view>
+      <button class="boss-primary-btn" @tap="createRoot">新建分类</button>
     </view>
   </view>
 </template>
@@ -112,6 +118,10 @@ async function loadData() {
 
 function onKeywordInput(e: { detail: { value: string } }) {
   keyword.value = e.detail.value
+}
+
+function goSort() {
+  uni.navigateTo({ url: '/pages/boss/products/categories/sort/index' })
 }
 
 function createRoot() {
@@ -186,6 +196,12 @@ function handleDelete(item: CategoryItem) {
 <style scoped lang="scss">
 @import '../../../styles/boss-footer.scss';
 
+.page {
+  height: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
 .search-wrap {
   flex-shrink: 0;
   padding: 16rpx 24rpx;
@@ -201,7 +217,9 @@ function handleDelete(item: CategoryItem) {
 }
 
 .list-scroll {
+  height: calc(100vh - 104rpx - 128rpx - env(safe-area-inset-bottom));
   background: #fff;
+  box-sizing: border-box;
 }
 
 .state-wrap {

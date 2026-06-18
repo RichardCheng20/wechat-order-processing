@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -126,7 +127,7 @@ public class DispatchService {
             throw BusinessException.of(404, "订单明细不存在");
         }
         if (request.getActualQty() != null) {
-            item.setActualQty(request.getActualQty());
+            item.setActualQty(clampActualQty(item, request.getActualQty()));
         }
         if (request.getShortageFlag() != null) {
             item.setShortageFlag(request.getShortageFlag());
@@ -135,6 +136,24 @@ public class DispatchService {
             item.setPickRemark(request.getPickRemark());
         }
         orderItemMapper.updateById(item);
+        return toWorkerTaskVO(order, true);
+    }
+
+    @Transactional
+    public WorkerTaskVO fillActualQty(Long orderId) {
+        Order order = getWorkerOrderOrThrow(orderId);
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+            order.setStatus(OrderStatus.PICKING);
+            orderMapper.updateById(order);
+        } else if (!OrderStatus.PICKING.equals(order.getStatus())) {
+            throw BusinessException.of(400, "当前状态不可一键下单出库");
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
+        for (OrderItem item : items) {
+            item.setActualQty(item.getOrderQty());
+            item.setShortageFlag(0);
+            orderItemMapper.updateById(item);
+        }
         return toWorkerTaskVO(order, true);
     }
 
@@ -160,8 +179,10 @@ public class DispatchService {
         for (OrderItem item : items) {
             if (item.getActualQty() == null) {
                 item.setActualQty(item.getOrderQty());
-                orderItemMapper.updateById(item);
+            } else {
+                item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
+            orderItemMapper.updateById(item);
         }
         order.setStatus(OrderStatus.PICKED);
         orderMapper.updateById(order);
@@ -260,5 +281,16 @@ public class DispatchService {
             case OrderStatus.PENDING_PRICE -> "待录价";
             default -> status;
         };
+    }
+
+    private BigDecimal clampActualQty(OrderItem item, BigDecimal actualQty) {
+        if (actualQty.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.of(400, "出库数量不能为负数");
+        }
+        BigDecimal orderQty = item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO;
+        if (actualQty.compareTo(orderQty) > 0) {
+            throw BusinessException.of(400, "出库数量不能多于下单数量");
+        }
+        return actualQty;
     }
 }

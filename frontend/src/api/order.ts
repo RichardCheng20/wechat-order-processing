@@ -35,6 +35,8 @@ export interface OrderInfo {
   contactName?: string
   amount?: number
   paidAmount?: number
+  receivableAmount?: number
+  outstandingAmount?: number
   priceIncomplete?: boolean
   paymentStatusLabel?: string
   remark?: string
@@ -98,10 +100,16 @@ export function fetchBossOrders(options?: {
   status?: string
   pricingPending?: boolean
   keyword?: string
+  customerId?: number
+  paymentFilter?: 'ALL' | 'UNPAID' | 'PAID' | 'PENDING' | 'PARTIAL' | 'SETTLED'
   pickFilter?: 'ALL' | 'UNPICKED' | 'PICKED'
+  dateType?: 'ORDER' | 'DELIVERY'
+  dateFrom?: string
+  dateTo?: string
   deliveryFrom?: string
   deliveryTo?: string
 }) {
+  const useNewDate = options?.dateFrom && options?.dateTo
   return request<OrderInfo[]>({
     url: '/api/boss/orders',
     method: 'GET',
@@ -109,9 +117,16 @@ export function fetchBossOrders(options?: {
       status: options?.status,
       pricingPending: options?.pricingPending ? 1 : undefined,
       keyword: options?.keyword,
+      customerId: options?.customerId,
+      paymentFilter: options?.paymentFilter && options.paymentFilter !== 'ALL'
+        ? options.paymentFilter
+        : undefined,
       pickFilter: options?.pickFilter && options.pickFilter !== 'ALL' ? options.pickFilter : undefined,
-      deliveryFrom: options?.deliveryFrom,
-      deliveryTo: options?.deliveryTo,
+      dateType: useNewDate ? options?.dateType || 'DELIVERY' : undefined,
+      dateFrom: useNewDate ? options?.dateFrom : undefined,
+      dateTo: useNewDate ? options?.dateTo : undefined,
+      deliveryFrom: !useNewDate ? options?.deliveryFrom : undefined,
+      deliveryTo: !useNewDate ? options?.deliveryTo : undefined,
     },
   })
 }
@@ -158,10 +173,26 @@ export function markBossOrderPrinted(id: number) {
   })
 }
 
+export function markBossOrderPayment(
+  id: number,
+  data: {
+    amount: number
+    discount?: number
+    method?: 'CASH' | 'WECHAT' | 'BANK_TRANSFER' | 'OTHER'
+    remark?: string
+  },
+) {
+  return request<OrderInfo>({
+    url: `/api/boss/orders/${id}/payment`,
+    method: 'POST',
+    data,
+  })
+}
+
 export const BOSS_ORDER_STATUS_OPTIONS = [
   { value: 'PENDING_CONFIRM', label: '待确认' },
   { value: 'PENDING_PRICE', label: '待录价' },
-  { value: 'PRICED', label: '待推送' },
+  { value: 'PRICED', label: '已录价' },
   { value: 'COMPLETED', label: '已完成' },
   { value: 'CANCELLED', label: '已取消' },
   { value: 'PENDING_PICK', label: '待分拣（旧流程）' },

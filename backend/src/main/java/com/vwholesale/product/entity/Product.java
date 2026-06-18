@@ -22,8 +22,10 @@ public class Product {
     private String unit;
     private String saleUnits;
     private String spec;
+    private String imageUrl;
     private BigDecimal defaultPrice;
     private BigDecimal defaultPurchasePrice;
+    private BigDecimal stockQty;
     private String saleStatus;
     @TableLogic
     private Integer deleted;

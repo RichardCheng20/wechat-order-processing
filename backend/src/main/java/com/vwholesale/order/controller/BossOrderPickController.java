@@ -44,7 +44,7 @@ public class BossOrderPickController {
         return ApiResponse.ok(orderPickService.updateItem(id, itemId, request));
     }
 
-    @Operation(summary = "一键称重")
+    @Operation(summary = "一键拣单出库")
     @PostMapping("/{id}/pick/fill-qty")
     public ApiResponse<OrderVO> fillQty(@PathVariable Long id) {
         return ApiResponse.ok(orderPickService.fillActualQty(id));

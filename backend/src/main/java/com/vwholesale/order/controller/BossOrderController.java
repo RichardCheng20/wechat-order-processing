@@ -4,6 +4,7 @@ import com.vwholesale.common.response.ApiResponse;
 import com.vwholesale.order.dto.BossDashboardVO;
 import com.vwholesale.order.dto.BossOrderCreateRequest;
 import com.vwholesale.order.dto.BossOrderUpdateRequest;
+import com.vwholesale.order.dto.OrderMarkPaymentRequest;
 import com.vwholesale.order.dto.OrderVO;
 import com.vwholesale.order.dto.UpdateOrderStatusRequest;
 import com.vwholesale.order.service.OrderService;
@@ -52,9 +53,15 @@ public class BossOrderController {
             @RequestParam(required = false) Boolean pricingPending,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String pickFilter,
+            @RequestParam(required = false) String dateType,
+            @RequestParam(required = false) LocalDate dateFrom,
+            @RequestParam(required = false) LocalDate dateTo,
             @RequestParam(required = false) LocalDate deliveryFrom,
-            @RequestParam(required = false) LocalDate deliveryTo) {
-        return ApiResponse.ok(orderService.listForBoss(status, pricingPending, keyword, pickFilter, deliveryFrom, deliveryTo));
+            @RequestParam(required = false) LocalDate deliveryTo,
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) String paymentFilter) {
+        return ApiResponse.ok(orderService.listForBoss(status, pricingPending, keyword, pickFilter,
+                dateType, dateFrom, dateTo, deliveryFrom, deliveryTo, customerId, paymentFilter));
     }
 
     @Operation(summary = "销售开单")
@@ -85,6 +92,12 @@ public class BossOrderController {
     @PostMapping("/orders/{id}/print")
     public ApiResponse<OrderVO> markPrinted(@PathVariable Long id) {
         return ApiResponse.ok(orderService.markPrinted(id));
+    }
+
+    @Operation(summary = "标记订单支付")
+    @PostMapping("/orders/{id}/payment")
+    public ApiResponse<OrderVO> markPayment(@PathVariable Long id, @Valid @RequestBody OrderMarkPaymentRequest request) {
+        return ApiResponse.ok(orderService.markPaymentByBoss(id, request));
     }
 
     @Operation(summary = "手动修改订单状态")

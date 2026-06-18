@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.vwholesale.common.context.MerchantContext;
 import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.product.dto.CategoryCreateRequest;
+import com.vwholesale.product.dto.CategorySortRequest;
 import com.vwholesale.product.dto.CategoryVO;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.entity.ProductCategory;
@@ -15,9 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -158,6 +162,31 @@ public class ProductCategoryService {
         categoryMapper.deleteById(category.getId());
     }
 
+    @Transactional
+    public void reorder(CategorySortRequest request) {
+        Long merchantId = merchantContext.currentMerchantId();
+        Long parentId = request.getParentId();
+        List<Long> orderedIds = request.getOrderedIds();
+
+        List<ProductCategory> siblings = categoryMapper.selectList(
+                buildSiblingWrapper(merchantId, parentId)
+                        .eq(ProductCategory::getStatus, 1)
+        );
+        Set<Long> siblingIds = siblings.stream().map(ProductCategory::getId).collect(Collectors.toSet());
+        Set<Long> orderedSet = new HashSet<>(orderedIds);
+        if (orderedIds.size() != siblingIds.size() || !siblingIds.equals(orderedSet)) {
+            throw BusinessException.of(400, "分类列表不完整或无效");
+        }
+
+        int order = 1;
+        for (Long id : orderedIds) {
+            ProductCategory update = new ProductCategory();
+            update.setId(id);
+            update.setSortOrder(order++);
+            categoryMapper.updateById(update);
+        }
+    }
+
     private LambdaQueryWrapper<ProductCategory> buildSiblingWrapper(Long merchantId, Long parentId) {
         LambdaQueryWrapper<ProductCategory> wrapper = new LambdaQueryWrapper<ProductCategory>()
                 .eq(ProductCategory::getMerchantId, merchantId);
@@ -171,6 +200,8 @@ public class ProductCategoryService {
 
     private CategoryVO toTreeVO(ProductCategory category, Map<Long, List<ProductCategory>> childrenMap) {
         List<CategoryVO> children = childrenMap.getOrDefault(category.getId(), List.of()).stream()
+                .sorted(Comparator.comparing(ProductCategory::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(ProductCategory::getId))
                 .map(child -> CategoryVO.builder()
                         .id(child.getId())
                         .parentId(child.getParentId())

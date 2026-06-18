@@ -70,7 +70,7 @@
   box-sizing: border-box;
 }
 
-// 底栏贴在 flex 页面底部（推荐，避免与内容区之间出现白条）
+// 底栏固定贴底（小程序勿用 static，容易与内容区之间出现白条）
 .boss-bottom-bar.boss-bottom-bar--static {
   position: static;
   flex-shrink: 0;

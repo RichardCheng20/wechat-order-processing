@@ -34,6 +34,11 @@ export function createApp() {
   const app = createSSRApp(App)
   const pinia = createPinia()
   app.use(pinia)
-  app.use(uviewPlus)
+  app.use(uviewPlus, () => ({
+    options: {
+      iconUrl: '/static/fonts/uview-icon.ttf',
+      loadFontOnce: true,
+    },
+  }))
   return { app }
 }

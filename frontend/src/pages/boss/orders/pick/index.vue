@@ -70,24 +70,9 @@
         </view>
       </view>
 
-      <view class="boss-bottom-bar">
-        <view class="boss-tool-item" @tap="handleFillQty">
-          <AppIcon class="boss-tool-icon" name="scale" tone="green" :size="22" :tile-size="54" :radius="14" />
-          <text class="boss-tool-label">一键称重</text>
-        </view>
-        <view class="boss-tool-item" @tap="handleFetchPrices">
-          <AppIcon class="boss-tool-icon" name="pricing" tone="green" :size="22" :tile-size="54" :radius="14" />
-          <text class="boss-tool-label">获取价格</text>
-        </view>
-        <view class="boss-tool-item" @tap="showComingSoon('蓝牙称')">
-          <AppIcon class="boss-tool-icon" name="bluetooth" tone="green" :size="22" :tile-size="54" :radius="14" />
-          <text class="boss-tool-label">蓝牙称</text>
-        </view>
-        <view class="boss-tool-item" @tap="showComingSoon('打印标签')">
-          <AppIcon class="boss-tool-icon" name="tag" tone="green" :size="22" :tile-size="54" :radius="14" />
-          <text class="boss-tool-label">打印标签</text>
-        </view>
-        <button class="boss-primary-btn" :loading="completing" @tap="handleComplete">完成</button>
+      <view class="boss-bottom-bar pick-bottom-bar dual">
+        <button class="boss-outline-btn flex" :loading="fillingAll" @tap="handleFillAll">一键拣单出库</button>
+        <button class="boss-primary-btn flex" :loading="completing" @tap="handleComplete">完成</button>
       </view>
     </template>
   </view>
@@ -99,13 +84,11 @@ import { onLoad } from '@dcloudio/uni-app'
 import {
   completeBossPick,
   fetchBossPickDetail,
-  fetchBossPickPrices,
   fillBossPickQty,
   startBossPick,
   updateBossPickItem,
 } from '../../../../api/pick'
 import type { OrderInfo, OrderLineItem } from '../../../../api/order'
-import AppIcon from '../../../../components/AppIcon.vue'
 import { useUserStore } from '../../../../stores/user'
 
 type FieldType = 'actualQty' | 'dealPrice'
@@ -114,7 +97,8 @@ const userStore = useUserStore()
 const order = ref<OrderInfo | null>(null)
 const loading = ref(false)
 const completing = ref(false)
-const showKeypad = ref(true)
+const fillingAll = ref(false)
+const showKeypad = ref(false)
 const orderId = ref(0)
 
 const activeItemId = ref<number | null>(null)
@@ -144,15 +128,10 @@ async function loadPick(autoStart = false) {
       order.value = await fetchBossPickDetail(orderId.value)
     }
     if (order.value?.customerName) {
-      uni.setNavigationBarTitle({ title: order.value.customerName })
+      const no = order.value.orderNo ? ` · ${order.value.orderNo}` : ''
+      uni.setNavigationBarTitle({ title: `${order.value.customerName}${no}` })
     }
     initDrafts()
-    if (order.value?.items?.length && activeItemId.value == null) {
-      const first = order.value.items[0]
-      if (first.id) {
-        focusField(first.id, 'actualQty', false)
-      }
-    }
   } catch (e) {
     uni.showToast({ title: e instanceof Error ? e.message : '加载失败', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 800)
@@ -166,20 +145,19 @@ function initDrafts() {
   for (const item of order.value?.items || []) {
     if (!item.id) continue
     draftValues[draftKey(item.id, 'actualQty')] = String(
-      item.shortageFlag === 1 ? 0 : (item.actualQty ?? item.orderQty ?? ''),
+      item.shortageFlag === 1 ? 0 : (item.actualQty ?? 0),
     )
     draftValues[draftKey(item.id, 'dealPrice')] = item.dealPrice != null ? String(item.dealPrice) : ''
   }
 }
 
 function displayActual(item: OrderLineItem) {
-  if (!item.id) return ''
+  if (!item.id) return '0'
   if (isActive(item.id, 'actualQty')) {
-    return draftValues[draftKey(item.id, 'actualQty')] ?? ''
+    return draftValues[draftKey(item.id, 'actualQty')] ?? '0'
   }
   if (item.shortageFlag === 1) return '0'
-  const val = item.actualQty ?? item.orderQty
-  return val != null ? String(val) : ''
+  return item.actualQty != null ? String(item.actualQty) : '0'
 }
 
 function displayPrice(item: OrderLineItem) {
@@ -202,7 +180,7 @@ function focusField(itemId: number, field: FieldType, openKeypad = true) {
   if (!item) return
   if (draftValues[draftKey(itemId, field)] === undefined || draftValues[draftKey(itemId, field)] === '') {
     if (field === 'actualQty') {
-      draftValues[draftKey(itemId, field)] = String(item.actualQty ?? item.orderQty ?? '')
+      draftValues[draftKey(itemId, field)] = String(item.actualQty ?? 0)
     } else {
       draftValues[draftKey(itemId, field)] = item.dealPrice != null ? String(item.dealPrice) : ''
     }
@@ -233,7 +211,16 @@ async function confirmField() {
   const itemId = activeItemId.value
   const field = activeField.value
   const raw = draftValues[draftKey(itemId, field)] ?? ''
-  const num = raw === '' ? undefined : Number(raw)
+  let num = raw === '' ? undefined : Number(raw)
+  const item = order.value?.items?.find((i) => i.id === itemId)
+  if (field === 'actualQty' && num != null && item) {
+    const maxQty = Number(item.orderQty ?? 0)
+    if (num > maxQty) {
+      uni.showToast({ title: `出库数不能大于下单数${maxQty}`, icon: 'none' })
+      num = maxQty
+      draftValues[draftKey(itemId, field)] = String(maxQty)
+    }
+  }
   try {
     if (field === 'actualQty') {
       order.value = await updateBossPickItem(orderId.value, itemId, { actualQty: num, shortageFlag: 0 })
@@ -274,24 +261,28 @@ async function markShortage() {
   }
 }
 
-async function handleFillQty() {
-  try {
-    order.value = await fillBossPickQty(orderId.value)
-    initDrafts()
-    uni.showToast({ title: '已按下单数填充', icon: 'success' })
-  } catch (e) {
-    uni.showToast({ title: e instanceof Error ? e.message : '操作失败', icon: 'none' })
-  }
-}
-
-async function handleFetchPrices() {
-  try {
-    order.value = await fetchBossPickPrices(orderId.value)
-    initDrafts()
-    uni.showToast({ title: '已获取参考价', icon: 'success' })
-  } catch (e) {
-    uni.showToast({ title: e instanceof Error ? e.message : '获取失败', icon: 'none' })
-  }
+async function handleFillAll() {
+  uni.showModal({
+    title: '确认拣单出库',
+    content: '确认拣单即确认已配好客户需要的货物，会相应减少对应产品库存。',
+    confirmText: '确认',
+    cancelText: '取消',
+    success: async (res) => {
+      if (!res.confirm) return
+      fillingAll.value = true
+      try {
+        order.value = await fillBossPickQty(orderId.value)
+        initDrafts()
+        activeItemId.value = null
+        showKeypad.value = false
+        uni.showToast({ title: '拣单出库完成', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : '操作失败', icon: 'none' })
+      } finally {
+        fillingAll.value = false
+      }
+    },
+  })
 }
 
 async function handleComplete() {
@@ -308,10 +299,6 @@ async function handleComplete() {
   } finally {
     completing.value = false
   }
-}
-
-function showComingSoon(name: string) {
-  uni.showToast({ title: `${name}即将上线`, icon: 'none' })
 }
 </script>
 
@@ -459,5 +446,30 @@ function showComingSoon(name: string) {
 
 .key.confirm.placeholder {
   background: transparent;
+}
+
+.pick-bottom-bar.dual {
+  gap: 16rpx;
+}
+
+.pick-bottom-bar .flex {
+  flex: 1;
+  margin: 0;
+}
+
+.boss-outline-btn {
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 16rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #07c160;
+  background: #fff;
+  border: 2rpx solid #07c160;
+  border-radius: 12rpx;
+}
+
+.boss-outline-btn::after {
+  border: none;
 }
 </style>

@@ -93,4 +93,61 @@ public class ProductPriceService {
         }
         return result;
     }
+
+    /** 查询指定日期的基础价；无当日记录时用 defaultPrice 兜底（便于批量录价对比昨日）。 */
+    public Map<Long, BigDecimal> batchGetDailyBasePrices(List<Long> productIds, LocalDate date,
+                                                         Map<Long, BigDecimal> fallbackDefaults) {
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Long merchantId = merchantContext.currentMerchantId();
+        Map<Long, BigDecimal> result = new HashMap<>();
+        List<ProductPriceRecord> records = productPriceMapper.selectList(
+                new LambdaQueryWrapper<ProductPriceRecord>()
+                        .eq(ProductPriceRecord::getMerchantId, merchantId)
+                        .in(ProductPriceRecord::getProductId, productIds)
+                        .isNull(ProductPriceRecord::getCustomerId)
+                        .eq(ProductPriceRecord::getEffectiveDate, date)
+                        .eq(ProductPriceRecord::getStatus, 1)
+        );
+        records.forEach(r -> result.put(r.getProductId(), r.getPrice()));
+        for (Long productId : productIds) {
+            if (result.containsKey(productId)) {
+                continue;
+            }
+            BigDecimal fallback = fallbackDefaults.get(productId);
+            if (fallback != null && fallback.compareTo(BigDecimal.ZERO) > 0) {
+                result.put(productId, fallback);
+            }
+        }
+        return result;
+    }
+
+    public void upsertDailyBasePrice(Long productId, BigDecimal price, LocalDate date) {
+        if (price == null) {
+            return;
+        }
+        Long merchantId = merchantContext.currentMerchantId();
+        ProductPriceRecord existing = productPriceMapper.selectOne(
+                new LambdaQueryWrapper<ProductPriceRecord>()
+                        .eq(ProductPriceRecord::getMerchantId, merchantId)
+                        .eq(ProductPriceRecord::getProductId, productId)
+                        .isNull(ProductPriceRecord::getCustomerId)
+                        .eq(ProductPriceRecord::getEffectiveDate, date)
+                        .last("LIMIT 1")
+        );
+        if (existing != null) {
+            existing.setPrice(price);
+            existing.setStatus(1);
+            productPriceMapper.updateById(existing);
+            return;
+        }
+        ProductPriceRecord record = new ProductPriceRecord();
+        record.setMerchantId(merchantId);
+        record.setProductId(productId);
+        record.setPrice(price);
+        record.setEffectiveDate(date);
+        record.setStatus(1);
+        productPriceMapper.insert(record);
+    }
 }

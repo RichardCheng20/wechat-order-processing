@@ -230,6 +230,10 @@ public class CustomerService {
                 stats.lastOrderAt = order.getCreatedAt();
             }
             if (OrderStatus.COMPLETED.equals(order.getStatus())) {
+                BigDecimal receivable = order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
+                if (receivable != null) {
+                    stats.totalSalesAmount = stats.totalSalesAmount.add(receivable);
+                }
                 BigDecimal outstanding = outstandingReceivable(order);
                 if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
                     stats.outstandingAmount = stats.outstandingAmount.add(outstanding);
@@ -250,6 +254,7 @@ public class CustomerService {
 
     private static class CustomerOrderStats {
         private BigDecimal outstandingAmount = BigDecimal.ZERO;
+        private BigDecimal totalSalesAmount = BigDecimal.ZERO;
         private LocalDateTime lastOrderAt;
     }
 
@@ -278,9 +283,11 @@ public class CustomerService {
                 .createdAt(customer.getCreatedAt());
         if (stats != null) {
             builder.outstandingAmount(stats.outstandingAmount)
+                    .totalSalesAmount(stats.totalSalesAmount)
                     .lastOrderAt(stats.lastOrderAt);
         } else {
-            builder.outstandingAmount(BigDecimal.ZERO);
+            builder.outstandingAmount(BigDecimal.ZERO)
+                    .totalSalesAmount(BigDecimal.ZERO);
         }
         return builder.build();
     }

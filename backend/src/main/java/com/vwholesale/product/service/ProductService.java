@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,19 @@ public class ProductService {
 
     public List<ProductVO> listForBoss(Long categoryId, String keyword) {
         return toVOList(queryProducts(categoryId, keyword, null), null, false);
+    }
+
+    public Map<Long, BigDecimal> listDailyBasePrices(LocalDate date) {
+        List<Product> products = queryProducts(null, null, "ON");
+        if (products.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, BigDecimal> defaults = new HashMap<>();
+        for (Product product : products) {
+            defaults.put(product.getId(), product.getDefaultPrice());
+        }
+        List<Long> productIds = products.stream().map(Product::getId).toList();
+        return productPriceService.batchGetDailyBasePrices(productIds, date, defaults);
     }
 
     public List<ProductVO> listForCustomer(Long categoryId, String keyword, Long customerId) {
@@ -57,9 +71,13 @@ public class ProductService {
         product.setUnit(units.get(0));
         product.setSaleUnits(String.join(",", units));
         product.setSpec(request.getSpec());
+        product.setImageUrl(trimToNull(request.getImageUrl()));
         product.setDefaultPrice(request.getDefaultPrice());
         product.setSaleStatus(StringUtils.hasText(request.getSaleStatus()) ? request.getSaleStatus() : "OFF");
         productMapper.insert(product);
+        if (product.getDefaultPrice() != null) {
+            productPriceService.upsertDailyBasePrice(product.getId(), product.getDefaultPrice(), LocalDate.now());
+        }
         return toVO(product, null, false);
     }
 
@@ -86,8 +104,12 @@ public class ProductService {
         if (request.getSpec() != null) {
             product.setSpec(request.getSpec());
         }
+        if (request.getImageUrl() != null) {
+            product.setImageUrl(trimToNull(request.getImageUrl()));
+        }
         if (request.getDefaultPrice() != null) {
             product.setDefaultPrice(request.getDefaultPrice());
+            productPriceService.upsertDailyBasePrice(product.getId(), request.getDefaultPrice(), LocalDate.now());
         }
         if (StringUtils.hasText(request.getSaleStatus())) {
             product.setSaleStatus(request.getSaleStatus());
@@ -211,8 +233,10 @@ public class ProductService {
 
         Map<Long, BigDecimal> priceMap = Map.of();
         if (withReferencePrice && !products.isEmpty()) {
-            Map<Long, BigDecimal> defaults = products.stream()
-                    .collect(Collectors.toMap(Product::getId, Product::getDefaultPrice, (a, b) -> a));
+            Map<Long, BigDecimal> defaults = new HashMap<>();
+            for (Product product : products) {
+                defaults.put(product.getId(), product.getDefaultPrice());
+            }
             priceMap = productPriceService.batchResolveReferencePrices(
                     products.stream().map(Product::getId).toList(),
                     customerId,
@@ -248,9 +272,18 @@ public class ProductService {
                 .unit(product.getUnit())
                 .saleUnits(parseSaleUnits(product.getSaleUnits(), product.getUnit()))
                 .spec(product.getSpec())
-                .defaultPrice(withReferencePrice ? product.getDefaultPrice() : null)
+                .imageUrl(product.getImageUrl())
+                .defaultPrice(product.getDefaultPrice())
                 .referencePrice(withReferencePrice ? referencePrice : null)
                 .saleStatus(product.getSaleStatus())
                 .build();
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed;
     }
 }

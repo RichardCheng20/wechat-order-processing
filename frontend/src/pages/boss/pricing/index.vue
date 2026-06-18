@@ -40,7 +40,7 @@
     </view>
 
     <view v-else-if="products.length === 0" class="empty-wrap">
-      <u-empty mode="order" text="暂无待录价商品" />
+      <u-empty mode="order" :text="emptyText" />
     </view>
 
     <view v-else class="workspace">
@@ -72,13 +72,28 @@
               共{{ detail.orderCount }}笔订单，{{ formatQty(detail.totalQty) }}{{ detail.unit }}
             </text>
             <view class="head-actions">
-              <view class="action-btn outline" @tap="handleFetchPrices">获取价格</view>
-              <view class="action-btn primary" @tap="handleSubmit">录价</view>
+              <template v-if="!isReadonlyPricing">
+                <view class="action-btn outline" @tap="handleFetchPrices">获取价格</view>
+                <view class="action-btn primary" @tap="handleSubmit">录价</view>
+              </template>
+              <text v-else class="readonly-hint">已全部录价，可查看或分享订单</text>
             </view>
           </view>
 
-          <scroll-view scroll-y class="line-list">
-            <view v-for="line in detail.lines" :key="line.itemId" class="line-card">
+          <scroll-view
+            scroll-y
+            class="line-list"
+            :class="{ 'line-list-keypad': showKeypad }"
+            :scroll-into-view="scrollIntoViewId"
+            scroll-with-animation
+          >
+            <view
+              v-for="line in detail.lines"
+              :id="`pricing-line-${line.itemId}`"
+              :key="line.itemId"
+              class="line-card"
+              :class="{ 'line-card-editing': activeLine?.itemId === line.itemId && showKeypad }"
+            >
               <view class="line-top">
                 <text class="customer-name">{{ line.customerName || '未知客户' }}</text>
                 <text v-if="line.priced" class="priced-tag">已录</text>
@@ -108,8 +123,26 @@
 
     <BossTabbar v-if="!showKeypad" active="pricing" />
 
-    <view v-if="showKeypad" class="keypad-wrap">
-      <view class="keypad-toggle" @tap="closeKeypad">⌄</view>
+    <view v-if="showKeypad && activeLine" class="keypad-wrap">
+      <view class="edit-context-bar">
+        <view class="edit-context-head">
+          <text class="edit-product">{{ detail?.productName }}</text>
+          <text class="edit-customer">{{ activeLine.customerName || '未知客户' }}</text>
+        </view>
+        <view class="edit-context-body">
+          <view class="edit-qty-wrap">
+            <text class="edit-label">数量</text>
+            <text class="edit-qty">{{ formatQty(activeLine.quantity) }}{{ activeLine.unit }}</text>
+          </view>
+          <view class="edit-price-wrap">
+            <text class="edit-label">单价</text>
+            <text class="edit-price">{{ keyboardDraft || '0' }}</text>
+            <text class="edit-unit">元/{{ activeLine.unit }}</text>
+          </view>
+        </view>
+        <text class="edit-meta">配送 {{ formatDelivery(activeLine.deliveryDate) }} · {{ displayLineRemark(activeLine) }}</text>
+      </view>
+      <view class="keypad-toggle" @tap="closeKeypad">收起键盘 ⌄</view>
       <view class="keypad-body">
         <view class="keypad-main">
           <view class="key-row">
@@ -156,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import {
   displayLineRemark,
@@ -188,7 +221,9 @@ const priceMap = reactive<Record<number, string>>({})
 const showKeypad = ref(false)
 const keyboardDraft = ref('')
 const activeLine = ref<PricingProductLine | null>(null)
+const scrollIntoViewId = ref('')
 const submitStatus = ref<'idle' | 'submitting' | 'success'>('idle')
+let detailRequestSeq = 0
 
 const priceTabs = [
   { label: '全部商品', value: 'ALL' as const },
@@ -199,6 +234,18 @@ const priceTabs = [
 const dateRangeLabel = computed(() => {
   if (!deliveryFrom.value || !deliveryTo.value) return '—'
   return `${formatMonthDay(deliveryFrom.value)}至${formatMonthDay(deliveryTo.value)}`
+})
+
+const emptyText = computed(() => {
+  if (priceFilter.value === 'PRICED') return '暂无已录价商品'
+  if (priceFilter.value === 'UNPRICED') return '暂无待录价商品'
+  return '暂无录价商品'
+})
+
+const isReadonlyPricing = computed(() => {
+  if (priceFilter.value === 'PRICED') return true
+  const lines = detail.value?.lines || []
+  return lines.length > 0 && lines.every((line) => line.priced)
 })
 
 const queryOptions = computed(() => ({
@@ -252,22 +299,35 @@ async function reloadProducts() {
 
 async function loadDetail(productId: number) {
   if (!productId) return
+  const seq = ++detailRequestSeq
   detailLoading.value = true
   try {
-    detail.value = await fetchProductPricingDetail(productId, queryOptions.value)
-    syncPriceMap(detail.value.lines)
+    const data = await fetchProductPricingDetail(productId, queryOptions.value)
+    if (seq !== detailRequestSeq) return
+    detail.value = data
+    selectedProductId.value = data.productId
+    syncPriceMap(data.lines)
   } catch (err) {
+    if (seq !== detailRequestSeq) return
     detail.value = null
     uni.showToast({ title: err instanceof Error ? err.message : '加载明细失败', icon: 'none' })
   } finally {
-    detailLoading.value = false
+    if (seq === detailRequestSeq) {
+      detailLoading.value = false
+    }
   }
 }
 
 function syncPriceMap(lines: PricingProductLine[]) {
+  const preserved = { ...priceMap }
   Object.keys(priceMap).forEach((key) => delete priceMap[Number(key)])
   for (const line of lines) {
-    priceMap[line.itemId] = line.dealPrice != null ? String(line.dealPrice) : ''
+    const draft = preserved[line.itemId]
+    if (draft != null && draft !== '') {
+      priceMap[line.itemId] = draft
+    } else {
+      priceMap[line.itemId] = line.dealPrice != null ? String(line.dealPrice) : ''
+    }
   }
 }
 
@@ -309,6 +369,22 @@ function setTomorrow() {
   reloadProducts()
 }
 
+function buildSubmitItems(lines: PricingProductLine[]) {
+  return lines
+    .map((line) => ({
+      itemId: line.itemId,
+      dealPrice: Number(priceMap[line.itemId] ?? line.dealPrice),
+    }))
+    .filter((item) => item.dealPrice > 0)
+}
+
+async function ensureFreshDetail(productId: number) {
+  const data = await fetchProductPricingDetail(productId, queryOptions.value)
+  detail.value = data
+  selectedProductId.value = data.productId
+  return data
+}
+
 function applyReference(line: PricingProductLine) {
   if (line.referencePrice == null) {
     uni.showToast({ title: '暂无参考价', icon: 'none' })
@@ -328,9 +404,14 @@ function displayPrice(itemId: number) {
 }
 
 function focusLine(line: PricingProductLine) {
+  if (isReadonlyPricing.value || line.priced) return
   activeLine.value = line
   keyboardDraft.value = priceMap[line.itemId] ?? ''
   showKeypad.value = true
+  scrollIntoViewId.value = ''
+  void nextTick(() => {
+    scrollIntoViewId.value = `pricing-line-${line.itemId}`
+  })
 }
 
 function closeKeypad() {
@@ -340,6 +421,7 @@ function closeKeypad() {
   showKeypad.value = false
   activeLine.value = null
   keyboardDraft.value = ''
+  scrollIntoViewId.value = ''
 }
 
 function inputKey(key: string) {
@@ -368,7 +450,7 @@ function clearDraft() {
 }
 
 async function confirmKeypad() {
-  if (!activeLine.value || !selectedProductId.value || submitting.value) return
+  if (!activeLine.value || !detail.value?.productId || submitting.value) return
   const dealPrice = Number(keyboardDraft.value)
   if (!dealPrice || dealPrice <= 0) {
     uni.showToast({ title: '请输入有效单价', icon: 'none' })
@@ -376,20 +458,30 @@ async function confirmKeypad() {
   }
 
   const currentLine = activeLine.value
+  const productId = detail.value.productId
   submitStatus.value = 'submitting'
   submitting.value = true
   try {
+    const fresh = await ensureFreshDetail(productId)
+    if (!fresh.lines.some((line) => line.itemId === currentLine.itemId)) {
+      throw new Error('该明细已变化，请刷新后重试')
+    }
     detail.value = await submitProductPricing(
-      selectedProductId.value,
+      productId,
       [{ itemId: currentLine.itemId, dealPrice }],
       queryOptions.value,
     )
     syncPriceMap(detail.value.lines)
     submitStatus.value = 'success'
     await refreshSidebar()
+    if (!detail.value.lines.length) {
+      await reloadProducts()
+    }
     setTimeout(() => {
       submitStatus.value = 'idle'
-      moveToNextLine(currentLine.itemId)
+      if (detail.value?.lines.length) {
+        moveToNextLine(currentLine.itemId)
+      }
     }, 900)
   } catch (err) {
     submitStatus.value = 'idle'
@@ -411,10 +503,12 @@ function moveToNextLine(currentItemId: number) {
 }
 
 async function handleFetchPrices() {
-  if (!selectedProductId.value) return
+  const productId = detail.value?.productId || selectedProductId.value
+  if (!productId) return
   detailLoading.value = true
   try {
-    detail.value = await fetchProductReferencePrices(selectedProductId.value, queryOptions.value)
+    detail.value = await fetchProductReferencePrices(productId, queryOptions.value)
+    selectedProductId.value = detail.value.productId
     syncPriceMap(detail.value.lines)
     uni.showToast({ title: '已填入参考价', icon: 'success' })
   } catch (err) {
@@ -427,12 +521,8 @@ async function handleFetchPrices() {
 async function handleSubmit() {
   if (!detail.value?.lines.length || submitting.value) return
   closeKeypad()
-  const items = detail.value.lines
-    .map((line) => ({
-      itemId: line.itemId,
-      dealPrice: Number(priceMap[line.itemId]),
-    }))
-    .filter((item) => item.dealPrice > 0)
+  const productId = detail.value.productId
+  const items = buildSubmitItems(detail.value.lines)
 
   if (items.length === 0) {
     uni.showToast({ title: '请至少填写一条单价', icon: 'none' })
@@ -442,10 +532,20 @@ async function handleSubmit() {
   submitting.value = true
   submitStatus.value = 'submitting'
   try {
-    detail.value = await submitProductPricing(selectedProductId.value, items, queryOptions.value)
+    const fresh = await ensureFreshDetail(productId)
+    const validItemIds = new Set(fresh.lines.map((line) => line.itemId))
+    const payload = items.filter((item) => validItemIds.has(item.itemId))
+    if (payload.length === 0) {
+      throw new Error('待录价明细已变化，请刷新后重试')
+    }
+    detail.value = await submitProductPricing(productId, payload, queryOptions.value)
     syncPriceMap(detail.value.lines)
-    await reloadProducts()
     submitStatus.value = 'success'
+    if (!detail.value.lines.length) {
+      await reloadProducts()
+    } else {
+      await refreshSidebar()
+    }
     setTimeout(() => {
       submitStatus.value = 'idle'
     }, 900)
@@ -499,7 +599,11 @@ function getWeekRange(base: Date) {
 }
 
 .page.with-keypad {
-  padding-bottom: calc(420rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(560rpx + env(safe-area-inset-bottom));
+}
+
+.page.with-keypad .workspace {
+  height: calc(100vh - 320rpx - 560rpx - env(safe-area-inset-bottom));
 }
 
 .search-bar {
@@ -683,6 +787,12 @@ function getWeekRange(base: Date) {
 .head-actions {
   display: flex;
   gap: 16rpx;
+  align-items: center;
+}
+
+.readonly-hint {
+  font-size: 24rpx;
+  color: #22c55e;
 }
 
 .action-btn {
@@ -708,11 +818,22 @@ function getWeekRange(base: Date) {
   padding: 16rpx;
 }
 
+.line-list-keypad {
+  padding-bottom: 24rpx;
+}
+
 .line-card {
   padding: 24rpx;
   margin-bottom: 16rpx;
   background: #fafafa;
   border-radius: 12rpx;
+  border: 2rpx solid transparent;
+}
+
+.line-card-editing {
+  background: #ecfdf3;
+  border-color: #22c55e;
+  box-shadow: 0 4rpx 16rpx rgba(34, 197, 94, 0.12);
 }
 
 .line-top {
@@ -814,13 +935,87 @@ function getWeekRange(base: Date) {
   background: #eef0f2;
   border-top: 1rpx solid #ddd;
   padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.08);
+}
+
+.edit-context-bar {
+  padding: 20rpx 24rpx 16rpx;
+  background: #fff;
+  border-bottom: 1rpx solid #e8e8e8;
+}
+
+.edit-context-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.edit-product {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.edit-customer {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #111;
+}
+
+.edit-context-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 16rpx;
+  gap: 24rpx;
+}
+
+.edit-label {
+  display: block;
+  margin-bottom: 6rpx;
+  font-size: 22rpx;
+  color: #999;
+}
+
+.edit-qty {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #111;
+}
+
+.edit-price-wrap {
+  text-align: right;
+}
+
+.edit-price {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #22c55e;
+  line-height: 1.1;
+}
+
+.edit-unit {
+  margin-left: 8rpx;
+  font-size: 24rpx;
+  color: #666;
+}
+
+.edit-meta {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .keypad-toggle {
   text-align: center;
   padding: 12rpx;
-  color: #999;
-  font-size: 28rpx;
+  color: #666;
+  font-size: 26rpx;
+  background: #f7f8f9;
 }
 
 .keypad-body {

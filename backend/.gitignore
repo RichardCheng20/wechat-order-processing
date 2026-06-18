@@ -7,3 +7,4 @@ target/
 .env
 *.log
 **/application-dev-local.yml
+uploads/

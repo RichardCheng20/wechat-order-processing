@@ -57,6 +57,8 @@ const iconMap: Record<string, string> = {
   filter: 'list-dot',
   batch: 'list',
   voice: 'mic',
+  camera: 'camera-fill',
+  scan: 'scan',
   scale: 'level',
   bluetooth: 'wifi',
   tag: 'tags',

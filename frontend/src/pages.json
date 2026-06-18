@@ -15,7 +15,8 @@
     {
       "path": "pages/customer/home/index",
       "style": {
-        "navigationBarTitleText": "下单"
+        "navigationBarTitleText": "下单",
+        "disableScroll": true
       }
     },
     {
@@ -52,16 +53,29 @@
       }
     },
     {
+      "path": "pages/boss/products/batch-price/index",
+      "style": {
+        "navigationBarTitleText": "批量录价",
+        "disableScroll": true
+      }
+    },
+    {
       "path": "pages/boss/products/form",
       "style": {
-        "navigationBarTitleText": "新建商品",
-        "disableScroll": true
+        "navigationBarTitleText": "新建商品"
       }
     },
     {
       "path": "pages/boss/products/categories",
       "style": {
         "navigationBarTitleText": "分类管理",
+        "disableScroll": true
+      }
+    },
+    {
+      "path": "pages/boss/products/categories/sort/index",
+      "style": {
+        "navigationBarTitleText": "分类排序",
         "disableScroll": true
       }
     },
@@ -86,7 +100,13 @@
     {
       "path": "pages/boss/procurement/index",
       "style": {
-        "navigationBarTitleText": "采购"
+        "navigationBarTitleText": "采购任务"
+      }
+    },
+    {
+      "path": "pages/boss/procurement/detail/index",
+      "style": {
+        "navigationBarTitleText": "采购详情"
       }
     },
     {
@@ -119,7 +139,7 @@
     {
       "path": "pages/boss/sales-payment/index",
       "style": {
-        "navigationBarTitleText": "销售记账"
+        "navigationBarTitleText": "新建记账"
       }
     },
     {
@@ -131,7 +151,7 @@
     {
       "path": "pages/boss/purchase-payment/index",
       "style": {
-        "navigationBarTitleText": "采购记账"
+        "navigationBarTitleText": "新建采购记账"
       }
     },
     {
@@ -175,6 +195,32 @@
       "path": "pages/boss/customers/index",
       "style": {
         "navigationBarTitleText": "客户管理",
+        "disableScroll": true
+      }
+    },
+    {
+      "path": "pages/boss/customers/detail/index",
+      "style": {
+        "navigationBarTitleText": "客户详情"
+      }
+    },
+    {
+      "path": "pages/boss/customers/reconcile/index",
+      "style": {
+        "navigationBarTitleText": "订单对账",
+        "disableScroll": true
+      }
+    },
+    {
+      "path": "pages/boss/customers/payments/index",
+      "style": {
+        "navigationBarTitleText": "收款记录"
+      }
+    },
+    {
+      "path": "pages/boss/customers/vouchers/index",
+      "style": {
+        "navigationBarTitleText": "结款凭证",
         "disableScroll": true
       }
     },

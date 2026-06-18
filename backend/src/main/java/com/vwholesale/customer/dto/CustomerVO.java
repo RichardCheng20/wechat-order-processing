@@ -29,6 +29,8 @@ public class CustomerVO {
     private LocalDateTime createdAt;
     /** 未结清欠款合计（已完成订单应收 - 已付） */
     private BigDecimal outstandingAmount;
+    /** 销售总额（已完成订单应收合计） */
+    private BigDecimal totalSalesAmount;
     /** 最近下单时间 */
     private LocalDateTime lastOrderAt;
 }

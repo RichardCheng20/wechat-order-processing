@@ -23,6 +23,7 @@
             @tap="statusFilter = tab.key"
           >{{ tab.label }}</text>
         </view>
+        <button class="batch-inline-btn" @tap="goBatchPrice">批量录价</button>
         <button class="create-inline-btn" @tap="goCreate">新建</button>
       </view>
       <view v-if="!loading && allProducts.length > 0" class="stats-bar">
@@ -84,7 +85,13 @@
 
         <view v-else class="list">
           <view v-for="item in filteredProducts" :key="item.id" class="card" @tap="goEdit(item)">
-            <AppIcon class="card-thumb" name="product" tone="orange" :size="24" :tile-size="72" :radius="18" />
+            <image
+              v-if="item.imageUrl"
+              class="card-thumb-img"
+              :src="resolveMediaUrl(item.imageUrl)"
+              mode="aspectFill"
+            />
+            <AppIcon v-else class="card-thumb" name="product" tone="orange" :size="24" :tile-size="72" :radius="18" />
             <view class="card-body">
               <view class="card-top">
                 <view class="name-block">
@@ -96,7 +103,9 @@
                 </view>
               </view>
               <view class="price-line">
-                <text class="price">¥{{ formatPrice(item.defaultPrice) }}</text>
+                <text class="price" :class="{ unset: !hasPrice(item) }">
+                  {{ hasPrice(item) ? `¥${formatPrice(item.defaultPrice)}` : '未定价' }}
+                </text>
                 <text class="price-unit">/{{ item.unit }}</text>
               </view>
               <view class="unit-tags">
@@ -168,6 +177,7 @@ import {
 } from '../../../api/product'
 import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '../../../utils/category'
 import AppIcon from '../../../components/AppIcon.vue'
+import { resolveMediaUrl } from '../../../utils/media'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
@@ -305,8 +315,21 @@ function goCreate() {
   uni.navigateTo({ url: '/pages/boss/products/form' })
 }
 
+function goBatchPrice() {
+  const category = categoryFilter.value !== 'all' ? categoryFilter.value : ''
+  uni.navigateTo({
+    url: category
+      ? `/pages/boss/products/batch-price/index?category=${encodeURIComponent(category)}`
+      : '/pages/boss/products/batch-price/index',
+  })
+}
+
 function goEdit(item: ProductItem) {
   uni.navigateTo({ url: `/pages/boss/products/form?id=${item.id}` })
+}
+
+function hasPrice(item: ProductItem) {
+  return item.defaultPrice != null && Number(item.defaultPrice) > 0
 }
 
 function openListPopup(item: ProductItem) {
@@ -462,6 +485,23 @@ function formatPrice(value?: number) {
 .status-tab.active {
   @include boss-chip(true);
   padding: 8rpx 20rpx;
+}
+
+.batch-inline-btn {
+  flex-shrink: 0;
+  height: 56rpx;
+  line-height: 56rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  background: #eef5ff;
+  color: #1677ff;
+  font-size: 24rpx;
+  font-weight: 600;
+  border-radius: $boss-radius;
+}
+
+.batch-inline-btn::after {
+  border: none;
 }
 
 .create-inline-btn {
@@ -635,6 +675,14 @@ function formatPrice(value?: number) {
   border-radius: 18rpx;
 }
 
+.card-thumb-img {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
+  background: #f5f6f7;
+}
+
 .card-body {
   flex: 1;
   min-width: 0;
@@ -680,12 +728,20 @@ function formatPrice(value?: number) {
 
 .price-line {
   margin-top: 6rpx;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 4rpx 0;
 }
 
 .price {
   font-size: 26rpx;
   color: $boss-price;
   font-weight: 700;
+}
+
+.price.unset {
+  color: $boss-ink-muted;
+  font-weight: 500;
 }
 
 .price-unit {

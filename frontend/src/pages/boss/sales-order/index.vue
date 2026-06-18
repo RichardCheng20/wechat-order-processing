@@ -108,6 +108,11 @@
             </view>
             <text class="col-op del" @tap="removeLine(line.lineKey)">删</text>
           </view>
+
+          <view v-if="salesOrder.items.length > 0" class="add-item-row" @tap="goProducts">
+            <text class="add-item-plus">+</text>
+            <text class="add-item-text">添加商品</text>
+          </view>
         </scroll-view>
       </view>
 
@@ -121,11 +126,11 @@
         <AppIcon class="boss-tool-icon" name="product" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">商品库</text>
       </view>
-      <view class="boss-tool-item" @tap="showComingSoon('批量录入')">
+      <view class="boss-tool-item" @tap="openBatchModal">
         <AppIcon class="boss-tool-icon" name="batch" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">批量录入</text>
       </view>
-      <view class="boss-tool-item" @tap="showComingSoon('语音录入')">
+      <view class="boss-tool-item" @tap="openVoiceModal">
         <AppIcon class="boss-tool-icon" name="voice" tone="green" :size="22" :tile-size="54" :radius="14" />
         <text class="boss-tool-label">语音录入</text>
       </view>
@@ -248,18 +253,59 @@
         </scroll-view>
       </view>
     </u-popup>
+
+    <u-popup :show="showBatchModal" mode="bottom" round="16" @close="closeBatchModal">
+      <view class="batch-panel">
+        <view class="batch-head">
+          <text class="batch-close" @tap="closeBatchModal">×</text>
+          <text class="batch-title">批量录入商品</text>
+          <text class="batch-single" @tap="goSingleProductFromBatch">单个录入</text>
+        </view>
+        <textarea
+          class="batch-textarea"
+          :value="batchText"
+          placeholder="粘贴示例：土豆5斤，番茄12.5斤..."
+          maxlength="-1"
+          :disabled="batchParsing"
+          @input="onBatchTextInput"
+        />
+        <button class="batch-recognize-btn" :loading="batchParsing" @tap="recognizeBatchText">识别</button>
+      </view>
+    </u-popup>
+
+    <u-popup :show="showVoiceModal" mode="bottom" round="16" @close="closeVoiceModal">
+      <view class="batch-panel">
+        <view class="batch-head">
+          <text class="batch-close" @tap="closeVoiceModal">×</text>
+          <text class="batch-title">语音录入</text>
+        </view>
+        <text class="voice-hint">点击输入框，使用键盘「语音」说话，如：土豆5斤，番茄2斤6元</text>
+        <textarea
+          class="batch-textarea voice-textarea"
+          :value="voiceText"
+          placeholder="说完后点下方「识别」"
+          maxlength="-1"
+          :disabled="voiceParsing"
+          :focus="voiceInputFocus"
+          @input="onVoiceTextInput"
+        />
+        <button class="batch-recognize-btn" :loading="voiceParsing" @tap="recognizeVoiceText">识别</button>
+      </view>
+    </u-popup>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import { computed, ref } from 'vue'
 import { filterUnits, mergeUnits, normalizeUnit, PRESET_UNITS } from '../../../constants/units'
 import { fetchBossCustomers, type CustomerItem } from '../../../api/customer'
 import { createBossOrder, fetchBossOrderDetail, updateBossOrder } from '../../../api/order'
+import { fetchBossProducts, type ProductItem } from '../../../api/product'
 import AppIcon from '../../../components/AppIcon.vue'
 import { deliveryDateString, formatDeliveryLabel, useSalesOrderStore, type SalesOrderLine } from '../../../stores/salesOrder'
 import { useUserStore } from '../../../stores/user'
+import { applyParsedLines, parseOrderText } from '../../../utils/parseOrderText'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -280,6 +326,14 @@ const unitEditingLine = ref<SalesOrderLine | null>(null)
 const unitKeyword = ref('')
 const customUnits = ref<string[]>([])
 const editOrderId = ref(0)
+const allProducts = ref<ProductItem[]>([])
+const showBatchModal = ref(false)
+const batchText = ref('')
+const batchParsing = ref(false)
+const showVoiceModal = ref(false)
+const voiceText = ref('')
+const voiceParsing = ref(false)
+const voiceInputFocus = ref(false)
 
 const allUnits = computed(() => mergeUnits(customUnits.value))
 const filteredUnits = computed(() => filterUnits(allUnits.value, unitKeyword.value))
@@ -298,6 +352,7 @@ const canUseTemporary = computed(() => {
 const showCustomerSuggestions = computed(() => {
   const kw = customerKeyword.value.trim()
   if (!kw) return false
+  if (salesOrder.customer?.name && kw === salesOrder.customer.name) return false
   return filteredCustomers.value.length > 0 || canUseTemporary.value
 })
 
@@ -356,7 +411,113 @@ onShow(async () => {
     customerKeyword.value = salesOrder.customer?.name || ''
   }
   filterCustomers()
+  await loadProducts()
 })
+
+async function loadProducts() {
+  try {
+    allProducts.value = await fetchBossProducts()
+  } catch {
+    allProducts.value = []
+  }
+}
+
+async function ensureProducts() {
+  if (allProducts.value.length > 0) return
+  await loadProducts()
+}
+
+async function handleRecognizedText(text: string) {
+  const parsed = parseOrderText(text)
+  if (parsed.length === 0) {
+    uni.showToast({ title: '未识别到商品，请检查格式', icon: 'none' })
+    return false
+  }
+  await ensureProducts()
+  const result = applyParsedLines(parsed, allProducts.value, (line) => {
+    salesOrder.upsertLine(line)
+  })
+  if (result.added === 0) {
+    uni.showToast({
+      title: `未匹配：${result.unmatched.slice(0, 3).join('、')}`,
+      icon: 'none',
+    })
+    return false
+  }
+  const extra = result.unmatched.length > 0 ? `，${result.unmatched.length}项未匹配` : ''
+  uni.showToast({ title: `已录入${result.added}种商品${extra}`, icon: 'success' })
+  return true
+}
+
+function openBatchModal() {
+  syncCustomerFromKeyword()
+  showBatchModal.value = true
+}
+
+function closeBatchModal() {
+  showBatchModal.value = false
+}
+
+function onBatchTextInput(e: { detail: { value: string } }) {
+  batchText.value = e.detail.value
+}
+
+async function recognizeBatchText() {
+  const text = batchText.value.trim()
+  if (!text) {
+    uni.showToast({ title: '请先粘贴或输入商品', icon: 'none' })
+    return
+  }
+  batchParsing.value = true
+  try {
+    const ok = await handleRecognizedText(text)
+    if (ok) {
+      batchText.value = ''
+      closeBatchModal()
+    }
+  } finally {
+    batchParsing.value = false
+  }
+}
+
+function goSingleProductFromBatch() {
+  closeBatchModal()
+  goProducts()
+}
+
+function openVoiceModal() {
+  syncCustomerFromKeyword()
+  voiceText.value = ''
+  showVoiceModal.value = true
+  voiceInputFocus.value = false
+  setTimeout(() => {
+    voiceInputFocus.value = true
+  }, 200)
+}
+
+function closeVoiceModal() {
+  voiceInputFocus.value = false
+  showVoiceModal.value = false
+}
+
+function onVoiceTextInput(e: { detail: { value: string } }) {
+  voiceText.value = e.detail.value
+}
+
+async function recognizeVoiceText() {
+  const text = voiceText.value.trim()
+  if (!text) {
+    uni.showToast({ title: '请先说话或输入内容', icon: 'none' })
+    return
+  }
+  voiceParsing.value = true
+  try {
+    const ok = await handleRecognizedText(text)
+    if (ok) closeVoiceModal()
+  } finally {
+    voiceParsing.value = false
+  }
+}
 
 function onCustomerNameInput(e: { detail: { value: string } }) {
   customerKeyword.value = e.detail.value
@@ -606,8 +767,8 @@ async function handleSubmit() {
         productId: line.productId,
         orderQty: line.orderQty,
         unit: line.unit,
-        dealPrice: line.dealPrice,
         pickRemark: line.pickRemark,
+        ...(isEditMode.value ? {} : { dealPrice: line.dealPrice }),
       })),
     }
     if (isEditMode.value && salesOrder.editOrderId) {
@@ -647,11 +808,11 @@ async function handleSubmit() {
 .page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 100vh;
   overflow: hidden;
   box-sizing: border-box;
   background: linear-gradient(180deg, #e8f8ef 0%, #f5f6f7 280rpx);
-  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
 }
 
 .customer-card {
@@ -663,7 +824,8 @@ async function handleSubmit() {
 }
 
 .main {
-  flex: 1;
+  flex: none;
+  height: calc(100vh - 220rpx - 128rpx - env(safe-area-inset-bottom));
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1014,6 +1176,31 @@ async function handleSubmit() {
   color: #2979ff;
 }
 
+.add-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin: 16rpx 32rpx 24rpx;
+  padding: 24rpx;
+  border: 2rpx dashed #07c160;
+  border-radius: 12rpx;
+  background: #f8fdf9;
+}
+
+.add-item-plus {
+  font-size: 36rpx;
+  color: #07c160;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.add-item-text {
+  font-size: 28rpx;
+  color: #07c160;
+  font-weight: 600;
+}
+
 .remark-bar {
   flex-shrink: 0;
   margin: 16rpx 0 16rpx;
@@ -1222,5 +1409,78 @@ async function handleSubmit() {
   text-align: center;
   color: #999;
   font-size: 28rpx;
+}
+
+.batch-panel {
+  padding: 0 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  background: #fff;
+}
+
+.batch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 0 20rpx;
+}
+
+.batch-close {
+  width: 56rpx;
+  font-size: 44rpx;
+  color: #999;
+  line-height: 1;
+}
+
+.batch-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.batch-single {
+  min-width: 120rpx;
+  text-align: right;
+  font-size: 28rpx;
+  color: #2979ff;
+}
+
+.batch-textarea {
+  width: 100%;
+  min-height: 280rpx;
+  padding: 24rpx;
+  background: #f5f6f7;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.batch-recognize-btn {
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 24rpx 0 0;
+  padding: 0;
+  background: #07c160;
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: 12rpx;
+  border: none;
+}
+
+.batch-recognize-btn::after {
+  border: none;
+}
+
+.voice-hint {
+  display: block;
+  margin-bottom: 16rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #66736b;
+}
+
+.voice-textarea {
+  min-height: 200rpx;
 }
 </style>

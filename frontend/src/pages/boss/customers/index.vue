@@ -1,8 +1,9 @@
 <template>
-  <view class="page boss-page">
+  <view class="page">
     <view class="top-bar">
       <view class="search-row">
         <view class="search-wrap">
+          <AppIcon class="search-icon" name="search" tone="green" :tile="false" :size="18" />
           <input
             class="search-input"
             type="text"
@@ -14,7 +15,6 @@
           />
           <text v-if="keyword" class="search-clear" @tap="clearKeyword">×</text>
         </view>
-        <button class="create-top-btn" @tap="showCreate = true">新建</button>
       </view>
 
       <view class="tabs">
@@ -58,6 +58,7 @@
           v-for="item in displayCustomers"
           :key="item.id"
           class="row"
+          @tap="goDetail(item.id)"
           @longpress="handleDelete(item)"
         >
           <view class="row-main">
@@ -75,8 +76,13 @@
             <text class="order-date">下单: {{ formatOrderDate(item.lastOrderAt) }}</text>
           </view>
         </view>
+        <view class="list-end">—— 已经到底了 ——</view>
       </view>
     </scroll-view>
+
+    <view class="boss-bottom-bar create-bottom-bar">
+      <button class="create-bottom-btn boss-primary-btn block" @tap="showCreate = true">新建客户</button>
+    </view>
 
     <u-popup :show="showCreate" mode="bottom" round="16" @close="showCreate = false">
       <view class="form">
@@ -118,6 +124,7 @@ import {
   type CustomerItem,
   type InviteCodeResult,
 } from '../../../api/customer'
+import AppIcon from '../../../components/AppIcon.vue'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
@@ -237,6 +244,10 @@ async function submitCreate() {
   }
 }
 
+function goDetail(id: number) {
+  uni.navigateTo({ url: `/pages/boss/customers/detail/index?id=${id}` })
+}
+
 async function handleInvite(item: CustomerItem) {
   if (item.bindStatus === 'BOUND') {
     uni.showToast({ title: '客户已绑定微信', icon: 'none' })
@@ -297,11 +308,10 @@ function formatTime(value: string) {
 @import '../../../styles/boss-footer.scss';
 
 .page {
-  display: flex;
-  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   box-sizing: border-box;
+  background: #f5f6f7;
 }
 
 .top-bar {
@@ -312,8 +322,6 @@ function formatTime(value: string) {
 .search-row {
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  position: relative;
   padding: 16rpx 24rpx;
   background: #f5f6f7;
 }
@@ -321,21 +329,30 @@ function formatTime(value: string) {
 .search-wrap {
   position: relative;
   flex: 1;
+  display: flex;
+  align-items: center;
   min-width: 0;
+  height: 72rpx;
+  padding: 0 72rpx 0 20rpx;
+  background: #fff;
+  border-radius: 999rpx;
+}
+
+.search-icon {
+  flex-shrink: 0;
+  margin-right: 12rpx;
 }
 
 .search-input {
+  flex: 1;
   height: 72rpx;
-  padding: 0 72rpx 0 28rpx;
-  background: #fff;
-  border-radius: 999rpx;
   font-size: 28rpx;
   color: #222;
 }
 
 .search-clear {
   position: absolute;
-  right: 44rpx;
+  right: 20rpx;
   top: 50%;
   transform: translateY(-50%);
   width: 40rpx;
@@ -346,20 +363,15 @@ function formatTime(value: string) {
   color: #bbb;
 }
 
-.create-top-btn {
-  width: 128rpx;
-  height: 72rpx;
-  line-height: 72rpx;
-  margin: 0;
-  padding: 0;
-  border-radius: 18rpx;
-  background: #07c160;
-  color: #fff;
-  font-size: 28rpx;
-  font-weight: 700;
+.create-bottom-bar {
+  z-index: 80;
 }
 
-.create-top-btn::after {
+.create-bottom-btn {
+  width: 100%;
+}
+
+.create-bottom-btn::after {
   border: none;
 }
 
@@ -403,20 +415,17 @@ function formatTime(value: string) {
 }
 
 .list-scroll {
-  flex: 1;
-  height: calc(100vh - 176rpx);
+  height: calc(100vh - 176rpx - 128rpx - env(safe-area-inset-bottom));
   background: #f5f6f7;
   box-sizing: border-box;
 }
 
 .list-scroll--unsettled {
-  height: calc(100vh - 248rpx);
+  height: calc(100vh - 248rpx - 128rpx - env(safe-area-inset-bottom));
 }
 
 .list-content {
-  min-height: 100%;
-  background: #fff;
-  box-sizing: border-box;
+  padding-bottom: 16rpx;
 }
 
 .state-wrap {
@@ -488,6 +497,13 @@ function formatTime(value: string) {
 .order-date {
   font-size: 22rpx;
   color: #bbb;
+}
+
+.list-end {
+  padding: 24rpx 0 8rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #ccc;
 }
 
 .form {

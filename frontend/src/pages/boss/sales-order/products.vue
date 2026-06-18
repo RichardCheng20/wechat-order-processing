@@ -16,7 +16,7 @@
       </view>
     </view>
 
-    <view class="main boss-main-fill">
+    <view class="main">
       <scroll-view scroll-y class="categories">
         <view
           v-for="cat in categoryTabs"
@@ -64,6 +64,12 @@
             :class="{ selected: cartCount(item.id) > 0 }"
             @tap="openEntry(item)"
           >
+            <image
+              v-if="item.imageUrl"
+              class="product-thumb"
+              :src="resolveMediaUrl(item.imageUrl)"
+              mode="aspectFill"
+            />
             <view class="product-info">
               <text class="product-name">{{ item.name }}</text>
               <text v-if="showProductPrice(item)" class="product-price">
@@ -77,7 +83,7 @@
       </view>
     </view>
 
-    <view class="bottom-bar boss-bottom-bar boss-bottom-bar--static">
+    <view class="bottom-bar boss-bottom-bar">
       <view class="selected-wrap" @tap="toggleSelectedPanel">
         <text class="selected">已选{{ salesOrder.totalKinds }}种</text>
         <text class="selected-arrow">{{ showSelectedPanel ? '▲' : '▼' }}</text>
@@ -204,6 +210,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { filterUnits, parseSaleUnits } from '../../../constants/units'
 import { fetchBossCategories, fetchBossProducts, type CategoryItem, type ProductItem } from '../../../api/product'
 import { buildPrimarySidebar, getParentCategory } from '../../../utils/category'
+import { resolveMediaUrl } from '../../../utils/media'
 import { useSalesOrderStore } from '../../../stores/salesOrder'
 import { useUserStore } from '../../../stores/user'
 
@@ -489,7 +496,8 @@ function goNewProduct() {
 .page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 100vh;
   overflow: hidden;
   background: #fff;
   box-sizing: border-box;
@@ -538,11 +546,14 @@ function goNewProduct() {
 }
 
 .main {
-  flex: 1;
+  flex: none;
+  height: calc(100vh - 104rpx - 128rpx - env(safe-area-inset-bottom));
   min-height: 0;
+  display: flex;
   flex-direction: row;
   align-items: stretch;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .categories {
@@ -605,6 +616,9 @@ function goNewProduct() {
 }
 
 .products {
+  flex: 1;
+  height: 0;
+  min-height: 0;
   background: #fff;
 }
 
@@ -621,6 +635,14 @@ function goNewProduct() {
 
 .product-row.selected {
   background: #f8fcf9;
+}
+
+.product-thumb {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 14rpx;
+  background: #f5f6f7;
 }
 
 .product-info {

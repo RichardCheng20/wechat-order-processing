@@ -31,6 +31,8 @@ public class OrderVO {
     private Integer itemCount;
     private Integer pickedItemCount;
     private BigDecimal paidAmount;
+    private BigDecimal receivableAmount;
+    private BigDecimal outstandingAmount;
     private Boolean priceIncomplete;
     private String sourceLabel;
     private String paymentStatusLabel;

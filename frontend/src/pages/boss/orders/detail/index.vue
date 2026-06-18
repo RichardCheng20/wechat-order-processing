@@ -4,84 +4,258 @@
       <u-loading-icon text="加载中" />
     </view>
 
-    <scroll-view v-else-if="order" scroll-y class="scroll-body">
-      <view class="header">
-        <view class="row-top">
-          <view class="name-wrap">
-            <text class="customer-name">{{ order.customerName }}</text>
-            <text v-if="isTemporaryOrder" class="temp-tag">临时</text>
+    <template v-else-if="order">
+      <scroll-view scroll-y class="scroll-body">
+        <view class="status-row">
+          <view class="status-chip">
+            <AppIcon name="order" tone="gray" :size="16" :tile-size="36" :radius="10" :tile="true" />
+            <text>{{ order.printed ? '已打印' : '未打印' }}</text>
           </view>
-          <u-tag :text="order.statusLabel" :type="statusType(order.status)" size="mini" />
-        </view>
-        <text class="meta">{{ order.orderNo }}</text>
-        <text class="meta">{{ order.deliveryAddressShort || '—' }}</text>
-        <text class="meta">{{ formatTime(order.createdAt) }}</text>
-        <text v-if="order.remark" class="remark">备注：{{ order.remark }}</text>
-        <text v-if="order.amount != null" class="amount">订单金额 ¥{{ Number(order.amount).toFixed(2) }}</text>
-      </view>
-
-      <view class="items">
-        <text class="section-title">下单明细</text>
-        <view v-for="line in order.items || []" :key="line.id" class="line-item">
-          <view class="line-main">
-            <text class="line-name">{{ line.productName }}</text>
-            <text class="line-qty">{{ line.orderQty }}{{ line.unit }}</text>
+          <view class="status-chip pay">
+            <AppIcon name="salesPayment" tone="green" :size="16" :tile-size="36" :radius="10" :tile="true" />
+            <text>{{ order.paymentStatusLabel || '未支付' }}</text>
           </view>
-          <text v-if="line.pickRemark" class="line-sub">备注：{{ line.pickRemark }}</text>
-          <text v-if="line.dealPrice != null" class="line-price">¥{{ Number(line.dealPrice).toFixed(2) }}/{{ line.unit }}</text>
+        </view>
+
+        <view class="info-card">
+          <view class="info-head">
+            <view class="name-wrap">
+              <text class="customer-name">{{ order.customerName || '未知客户' }}</text>
+              <text v-if="isTemporaryOrder" class="temp-tag">临时</text>
+            </view>
+            <text v-if="order.sourceLabel" class="source-tag">{{ order.sourceLabel }}</text>
+          </view>
+
+          <view class="delivery-line">
+            <text class="delivery-label">配送时间：</text>
+            <text class="delivery-value">{{ deliveryTimeText }}</text>
+          </view>
+
+          <view class="info-grid">
+            <view class="info-row">
+              <text class="info-label">订单编号</text>
+              <text class="info-value">{{ order.orderNo }}</text>
+            </view>
+            <view class="info-row">
+              <text class="info-label">下单时间</text>
+              <text class="info-value">{{ formatTime(order.createdAt) }}</text>
+            </view>
+            <view class="info-row">
+              <text class="info-label">收货信息</text>
+              <text class="info-value">{{ receiverInfo }}</text>
+            </view>
+            <view class="info-row">
+              <text class="info-label">订单状态</text>
+              <text class="info-value status-text">{{ order.statusLabel }}</text>
+            </view>
+            <view class="info-row">
+              <text class="info-label">下单金额</text>
+              <text class="info-value">{{ formatMoney(order.amount) }}</text>
+            </view>
+            <view class="info-row">
+              <text class="info-label">销售金额</text>
+              <text class="info-value">{{ formatMoney(order.amount) }}</text>
+            </view>
+          </view>
+
+          <view v-if="order.remark" class="order-remark">备注：{{ order.remark }}</view>
+
+          <view class="finance-grid">
+            <view class="finance-cell">
+              <text class="finance-label">出库金额</text>
+              <text class="finance-value">{{ formatMoney(order.amount) }}</text>
+            </view>
+            <view class="finance-cell">
+              <text class="finance-label">售后金额</text>
+              <text class="finance-value muted">—</text>
+            </view>
+            <view class="finance-cell">
+              <text class="finance-label">优惠</text>
+              <text class="finance-value muted">—</text>
+            </view>
+            <view class="finance-cell">
+              <text class="finance-label">已收</text>
+              <text class="finance-value">{{ formatMoney(order.paidAmount) }}</text>
+            </view>
+            <view class="finance-cell highlight-green">
+              <text class="finance-label">应收</text>
+              <text class="finance-value green">{{ formatMoney(order.receivableAmount ?? order.amount) }}</text>
+            </view>
+            <view class="finance-cell highlight-red">
+              <text class="finance-label">欠款</text>
+              <text class="finance-value red">{{ formatMoney(order.outstandingAmount) }}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="items-card">
+          <view class="items-head">
+            <view class="items-title-wrap">
+              <AppIcon name="order" tone="green" :size="18" :tile-size="40" :radius="10" :tile="true" />
+              <text class="items-title">共{{ itemKinds }}种商品</text>
+            </view>
+          </view>
+
+          <view class="table-head">
+            <text class="col-name">商品名</text>
+            <text class="col-qty">下单数</text>
+            <text class="col-out">出库数</text>
+            <text class="col-price">单价</text>
+            <text class="col-sub">小计</text>
+          </view>
+
+          <view
+            v-for="line in order.items || []"
+            :key="line.id || `${line.productId}-${line.unit}`"
+            class="table-row"
+          >
+            <view class="col-name">
+              <text class="line-name">{{ line.productName }}</text>
+              <text v-if="line.pickRemark" class="line-remark">备注：{{ line.pickRemark }}</text>
+            </view>
+            <text class="col-qty">{{ line.orderQty }}{{ line.unit }}</text>
+            <text class="col-out" :class="{ done: line.actualQty != null }">{{ outboundQty(line) }}</text>
+            <text class="col-price">{{ line.dealPrice != null ? line.dealPrice : '—' }}</text>
+            <text class="col-sub">{{ lineSubtotal(line) }}</text>
+          </view>
+
+          <view v-if="order.priceIncomplete" class="price-warn-bar">部分商品未录价</view>
+        </view>
+      </scroll-view>
+
+      <view class="boss-bottom-bar detail-bar">
+        <view class="bar-tool" @tap="showMoreActions = true">
+          <AppIcon name="batch" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
+          <text>更多</text>
+        </view>
+        <view v-if="canEditOrder" class="bar-tool" @tap="goEdit">
+          <AppIcon name="pricing" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
+          <text>改单</text>
+        </view>
+        <view class="bar-outline" @tap="goPrint">打印单据</view>
+        <button
+          v-if="showPickAction"
+          class="bar-primary"
+          :class="{ picked: isFullyPicked && pickButtonDisabled }"
+          :disabled="pickButtonDisabled"
+          @tap="goPick"
+        >
+          {{ pickButtonLabel }}
+        </button>
+        <button
+          v-else-if="order.status === 'PENDING_CONFIRM'"
+          class="bar-primary"
+          @tap="handleConfirm"
+        >
+          确认交货
+        </button>
+        <button
+          v-else-if="showPriceButton"
+          class="bar-primary"
+          @tap="goPricing"
+        >
+          去录价
+        </button>
+      </view>
+    </template>
+
+    <view v-if="showMoreActions" class="more-mask" @tap="showMoreActions = false" />
+    <view v-if="showMoreActions" class="more-sheet">
+      <view class="more-grid">
+        <view
+          v-for="item in moreMenuItems"
+          :key="item.key"
+          class="more-grid-item"
+          @tap="handleMoreMenu(item.key)"
+        >
+          <AppIcon
+            :name="item.icon"
+            :tone="item.tone"
+            :size="22"
+            :tile-size="96"
+            :radius="20"
+            :tile="true"
+          />
+          <text class="more-grid-label">{{ item.label }}</text>
         </view>
       </view>
-    </scroll-view>
-
-    <view v-if="order && !loading" class="boss-bottom-bar column">
-      <u-button
-        v-if="canEditOrder"
-        type="info"
-        plain
-        text="修改订单"
-        @click="goEdit"
-      />
-      <u-button
-        v-if="showPickButton"
-        type="primary"
-        text="去分拣"
-        @click="goPick"
-      />
-      <u-button
-        v-if="order.status === 'PENDING_CONFIRM'"
-        type="primary"
-        text="确认已交货"
-        @click="handleConfirm"
-      />
-      <u-button
-        v-if="showPriceButton"
-        type="warning"
-        text="去录价"
-        @click="goPricing"
-      />
-      <u-button
-        v-if="order.status === 'PRICED'"
-        type="success"
-        text="推送给客户"
-        :loading="publishing"
-        @click="handlePublish"
-      />
-      <u-button
-        v-if="order.status !== 'CANCELLED'"
-        type="info"
-        plain
-        text="修改状态"
-        @click="showStatusPicker = true"
-      />
+      <view class="more-cancel" @tap="showMoreActions = false">取消</view>
     </view>
 
-    <u-action-sheet
-      :show="showStatusPicker"
-      :actions="statusActions"
-      title="选择目标状态（用于纠错回退）"
-      @close="showStatusPicker = false"
-      @select="handleStatusSelect"
-    />
+    <view v-if="showRemarkEditor" class="more-mask" @tap="showRemarkEditor = false" />
+    <view v-if="showRemarkEditor" class="remark-sheet">
+      <text class="remark-title">订单备注</text>
+      <textarea
+        v-model="remarkDraft"
+        class="remark-input"
+        placeholder="输入备注"
+        maxlength="200"
+        :auto-height="true"
+      />
+      <view class="remark-actions">
+        <view class="remark-btn ghost" @tap="showRemarkEditor = false">取消</view>
+        <view class="remark-btn primary" @tap="saveRemark">保存</view>
+      </view>
+    </view>
+
+    <view v-if="showMarkPayment" class="pay-mask" @tap="closeMarkPayment">
+      <view class="pay-sheet" @tap.stop>
+        <view class="pay-head">
+          <text class="pay-close" @tap="closeMarkPayment">×</text>
+          <text class="pay-title">标记支付</text>
+          <text class="pay-head-spacer" />
+        </view>
+        <text class="pay-sales">销售金额：{{ formatMoney(order?.amount) }}元</text>
+
+        <view class="pay-row">
+          <text class="pay-row-label">应收</text>
+          <text class="pay-row-value">{{ payReceivableText }}</text>
+        </view>
+        <view
+          class="pay-row editable"
+          :class="{ active: payActiveField === 'discount' }"
+          @tap="payActiveField = 'discount'"
+        >
+          <text class="pay-row-label">优惠</text>
+          <text class="pay-row-value highlight">{{ payDiscountDraft || '0.00' }}</text>
+        </view>
+        <view
+          class="pay-row editable"
+          :class="{ active: payActiveField === 'amount' }"
+          @tap="payActiveField = 'amount'"
+        >
+          <text class="pay-row-label">本次收款</text>
+          <text class="pay-row-value highlight">{{ payAmountDraft || '0' }}</text>
+        </view>
+
+        <view class="pay-method" @tap="pickPayMethod">
+          <text class="pay-method-label">支付方式</text>
+          <text class="pay-method-value">{{ payMethodLabel }} ›</text>
+        </view>
+
+        <view class="pay-keypad">
+          <view class="key" @tap="inputPayKey('1')">1</view>
+          <view class="key" @tap="inputPayKey('2')">2</view>
+          <view class="key" @tap="inputPayKey('3')">3</view>
+          <view class="key fn" @tap="backspacePayKey">⌫</view>
+
+          <view class="key" @tap="inputPayKey('4')">4</view>
+          <view class="key" @tap="inputPayKey('5')">5</view>
+          <view class="key" @tap="inputPayKey('6')">6</view>
+          <view class="key fn" @tap="clearPayField">清零</view>
+
+          <view class="key" @tap="inputPayKey('7')">7</view>
+          <view class="key" @tap="inputPayKey('8')">8</view>
+          <view class="key" @tap="inputPayKey('9')">9</view>
+          <view class="key confirm" @tap="submitMarkPayment">确定</view>
+
+          <view class="key" @tap="inputPayKey('.')">.</view>
+          <view class="key" @tap="inputPayKey('0')">0</view>
+          <view class="key blank" />
+          <view class="key blank" />
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -89,49 +263,140 @@
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import {
-  BOSS_ORDER_STATUS_OPTIONS,
   confirmBossOrder,
   fetchBossOrderDetail,
+  markBossOrderPayment,
+  updateBossOrder,
   updateBossOrderStatus,
   type OrderInfo,
+  type OrderLineItem,
 } from '../../../../api/order'
-import { publishOrderPricing } from '../../../../api/pricing'
+import { completeBossPick, fetchBossPickPrices } from '../../../../api/pick'
+import { updateBossProduct } from '../../../../api/product'
+import AppIcon from '../../../../components/AppIcon.vue'
+import { deliveryDateString, useSalesOrderStore } from '../../../../stores/salesOrder'
 import { useUserStore } from '../../../../stores/user'
 
 const userStore = useUserStore()
+const salesOrder = useSalesOrderStore()
 const order = ref<OrderInfo | null>(null)
 const loading = ref(false)
-const publishing = ref(false)
-const showStatusPicker = ref(false)
+const syncingPrice = ref(false)
+const showMoreActions = ref(false)
+const showRemarkEditor = ref(false)
+const showMarkPayment = ref(false)
+const payDiscountDraft = ref('0')
+const payAmountDraft = ref('')
+const payActiveField = ref<'discount' | 'amount'>('amount')
+const payMethod = ref<'WECHAT' | 'CASH' | 'BANK_TRANSFER' | 'OTHER'>('WECHAT')
+const paySubmitting = ref(false)
+const remarkDraft = ref('')
 const orderId = ref(0)
 
-const EDITABLE_STATUSES = ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PENDING_PRICE']
+const PAY_METHOD_LABELS: Record<string, string> = {
+  WECHAT: '微信',
+  CASH: '现金',
+  BANK_TRANSFER: '银行转账',
+  OTHER: '其他',
+}
 
-const isTemporaryOrder = computed(() => !order.value?.customerId)
+type MoreMenuTone = 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'teal' | 'pink' | 'gray' | 'white'
+
+interface MoreMenuItem {
+  key: string
+  label: string
+  icon: string
+  tone: MoreMenuTone
+}
+
+const isFullyPicked = computed(() => {
+  const o = order.value
+  if (!o) return false
+  const total = o.itemCount || itemKinds.value
+  const picked = o.pickedItemCount ?? countPickedFromItems()
+  return total > 0 && picked >= total
+})
+
+function countPickedFromItems() {
+  const items = order.value?.items || []
+  return items.filter((line) => line.shortageFlag === 1 || line.actualQty != null).length
+}
+
+const pickButtonLabel = computed(() => {
+  if (isFullyPicked.value) return '已拣单'
+  const o = order.value
+  return `分拣(${o?.pickedItemCount || 0}/${o?.itemCount || itemKinds.value})`
+})
+
+const pickButtonDisabled = computed(() => {
+  const o = order.value
+  if (!o) return true
+  if (['PRICED', 'COMPLETED', 'CANCELLED'].includes(o.status)) return true
+  if (o.status === 'PENDING_PRICE' && o.amount != null) return true
+  return false
+})
+
+const showPickAction = computed(() => {
+  if (!order.value) return false
+  if (['CANCELLED', 'COMPLETED', 'PRICED'].includes(order.value.status)) return false
+  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE'].includes(order.value.status)
+    && !(order.value.status === 'PENDING_PRICE' && order.value.amount != null)
+})
+
+const itemKinds = computed(() =>
+  order.value?.items?.length || order.value?.itemCount || 0,
+)
+
+const deliveryTimeText = computed(() => {
+  if (!order.value?.deliveryDate) return '—'
+  return `${order.value.deliveryDate} 23:00`
+})
+
+const receiverInfo = computed(() => {
+  const o = order.value
+  if (!o) return '—'
+  const parts = [o.contactName, o.deliveryAddressShort].filter(Boolean)
+  return parts.length ? parts.join('  ') : '—'
+})
 
 const canEditOrder = computed(() => {
   if (!order.value) return false
-  if (order.value.amount != null) return false
-  return EDITABLE_STATUSES.includes(order.value.status)
+  return !['CANCELLED', 'COMPLETED'].includes(order.value.status)
 })
 
 const showPriceButton = computed(() => {
   if (!order.value) return false
-  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PENDING_PRICE'].includes(order.value.status)
+  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE'].includes(order.value.status)
     && order.value.amount == null
 })
 
-const showPickButton = computed(() => {
-  if (!order.value) return false
-  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PENDING_PRICE'].includes(order.value.status)
-    && order.value.amount == null
+const isTemporaryOrder = computed(() => !order.value?.customerId)
+
+const moreMenuItems = computed<MoreMenuItem[]>(() => {
+  const items: MoreMenuItem[] = [
+    { key: 'copy', label: '复制订单', icon: 'salesOrder', tone: 'gray' },
+    { key: 'share', label: '分享', icon: 'invite', tone: 'gray' },
+    { key: 'syncPrice', label: '同步价格', icon: 'quote', tone: 'orange' },
+    { key: 'voucher', label: '添加凭证', icon: 'camera', tone: 'gray' },
+    { key: 'outbound', label: '出库', icon: 'inventory', tone: 'gray' },
+    { key: 'markPaid', label: '标记支付', icon: 'salesPayment', tone: 'green' },
+    { key: 'delete', label: '删单', icon: 'delete', tone: 'red' },
+    { key: 'remark', label: '备注', icon: 'pricing', tone: 'gray' },
+  ]
+  return items
 })
 
-const statusActions = computed(() =>
-  BOSS_ORDER_STATUS_OPTIONS
-    .filter((opt) => opt.value !== order.value?.status)
-    .map((opt) => ({ name: opt.label, value: opt.value })),
-)
+const payMethodLabel = computed(() => {
+  const label = PAY_METHOD_LABELS[payMethod.value] || '微信'
+  return payMethod.value === 'WECHAT' ? `${label}(默认)` : label
+})
+
+const payReceivableText = computed(() => {
+  const sales = Number(order.value?.amount || 0)
+  const discount = Number(payDiscountDraft.value || 0)
+  const receivable = Math.max(0, sales - discount)
+  return receivable.toFixed(2)
+})
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
@@ -158,8 +423,365 @@ async function loadOrder() {
   }
 }
 
+function handleMoreMenu(key: string) {
+  showMoreActions.value = false
+  switch (key) {
+    case 'copy':
+      copyOrder()
+      break
+    case 'share':
+      shareOrder()
+      break
+    case 'syncPrice':
+      openSyncPrice()
+      break
+    case 'voucher':
+      goPayment()
+      break
+    case 'outbound':
+      handleOutbound()
+      break
+    case 'markPaid':
+      openMarkPayment()
+      break
+    case 'delete':
+      handleDeleteOrder()
+      break
+    case 'remark':
+      openRemarkEditor()
+      break
+    default:
+      break
+  }
+}
+
+function copyOrder() {
+  const o = order.value
+  if (!o) return
+  salesOrder.reset()
+  const name = (o.customerName || o.contactName || '').trim()
+  if (o.customerId) {
+    salesOrder.setCustomer({ id: o.customerId, name, temporary: false })
+  } else if (name) {
+    salesOrder.setTemporaryCustomer(name)
+  }
+  salesOrder.setRemark(o.remark || '')
+  if (o.deliveryDate) {
+    const tomorrow = deliveryDateString('tomorrow')
+    salesOrder.setDeliveryDay(o.deliveryDate === tomorrow ? 'tomorrow' : 'today')
+  }
+  for (const line of o.items || []) {
+    salesOrder.upsertLine({
+      productId: line.productId,
+      productName: line.productName || '',
+      unit: line.unit,
+      orderQty: Number(line.orderQty),
+      dealPrice: line.dealPrice != null ? Number(line.dealPrice) : undefined,
+      pickRemark: line.pickRemark,
+    })
+  }
+  uni.navigateTo({ url: '/pages/boss/sales-order/index' })
+}
+
+function shareOrder() {
+  const o = order.value
+  if (!o) return
+  const lines = (o.items || [])
+    .map((line) => {
+      const pricePart = line.dealPrice != null ? ` ¥${line.dealPrice}` : ''
+      return `${line.productName} ${line.orderQty}${line.unit}${pricePart}`
+    })
+    .join('\n')
+  const text = [
+    `【${o.customerName || '客户'}】`,
+    `订单号：${o.orderNo}`,
+    `配送：${o.deliveryDate || '—'}`,
+    lines,
+    `合计：¥${formatMoney(o.amount)}`,
+  ].join('\n')
+  uni.setClipboardData({
+    data: text,
+    success: () => uni.showToast({ title: '已复制，可粘贴分享', icon: 'none' }),
+  })
+}
+
+function openSyncPrice() {
+  uni.showActionSheet({
+    itemList: ['从报价单同步到订单', '从订单同步到报价单'],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        syncPriceFromQuote()
+      } else if (res.tapIndex === 1) {
+        syncPriceToQuote()
+      }
+    },
+  })
+}
+
+async function syncPriceFromQuote() {
+  if (syncingPrice.value) return
+  syncingPrice.value = true
+  try {
+    order.value = await fetchBossPickPrices(orderId.value)
+    uni.showToast({ title: '已从报价同步到订单', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '同步失败', icon: 'none' })
+  } finally {
+    syncingPrice.value = false
+  }
+}
+
+async function syncPriceToQuote() {
+  const items = (order.value?.items || []).filter(
+    (line) => line.productId && line.dealPrice != null,
+  )
+  if (!items.length) {
+    uni.showToast({ title: '订单暂无已录价格', icon: 'none' })
+    return
+  }
+  uni.showModal({
+    title: '同步价格',
+    content: `将 ${items.length} 个商品的成交价写回商品默认价？`,
+    success: async (res) => {
+      if (!res.confirm) return
+      if (syncingPrice.value) return
+      syncingPrice.value = true
+      try {
+        for (const line of items) {
+          await updateBossProduct(line.productId, { defaultPrice: Number(line.dealPrice) })
+        }
+        uni.showToast({ title: '已同步到报价单', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : '同步失败', icon: 'none' })
+      } finally {
+        syncingPrice.value = false
+      }
+    },
+  })
+}
+
+function goPayment() {
+  const o = order.value
+  if (!o) return
+  if (!o.customerId && !o.customerName) {
+    uni.showToast({ title: '散客订单请先关联客户', icon: 'none' })
+    return
+  }
+  const params: string[] = []
+  if (o.customerId) {
+    params.push(`customerId=${o.customerId}`)
+  }
+  if (o.customerName) {
+    params.push(`customerName=${encodeURIComponent(o.customerName)}`)
+  }
+  uni.navigateTo({ url: `/pages/boss/sales-payment/index?${params.join('&')}` })
+}
+
+function openMarkPayment() {
+  const o = order.value
+  if (!o) return
+  if (!o.customerId) {
+    uni.showToast({ title: '散客订单请先关联客户', icon: 'none' })
+    return
+  }
+  if (o.amount == null) {
+    uni.showToast({ title: '订单尚未录价', icon: 'none' })
+    return
+  }
+  const outstanding = o.outstandingAmount ?? o.receivableAmount ?? o.amount
+  if (outstanding != null && Number(outstanding) <= 0) {
+    uni.showToast({ title: '该订单已结清', icon: 'none' })
+    return
+  }
+  payDiscountDraft.value = '0'
+  payAmountDraft.value = outstanding != null ? String(Number(outstanding)) : ''
+  payActiveField.value = 'amount'
+  payMethod.value = 'WECHAT'
+  showMarkPayment.value = true
+}
+
+function closeMarkPayment() {
+  showMarkPayment.value = false
+}
+
+function pickPayMethod() {
+  uni.showActionSheet({
+    itemList: ['微信', '现金', '银行转账', '其他'],
+    success: (res) => {
+      const methods = ['WECHAT', 'CASH', 'BANK_TRANSFER', 'OTHER'] as const
+      payMethod.value = methods[res.tapIndex] || 'WECHAT'
+    },
+  })
+}
+
+function currentPayDraft() {
+  return payActiveField.value === 'discount' ? payDiscountDraft : payAmountDraft
+}
+
+function inputPayKey(key: string) {
+  const draft = currentPayDraft()
+  let value = draft.value
+  if (key === '.') {
+    if (value.includes('.')) return
+    value = value ? `${value}.` : '0.'
+  } else if (key === '0') {
+    if (value === '0') return
+    value = value ? `${value}0` : '0'
+  } else {
+    value = value === '0' ? key : `${value}${key}`
+  }
+  if (value.includes('.')) {
+    const [, dec] = value.split('.')
+    if (dec && dec.length > 2) return
+  }
+  draft.value = value
+  if (payActiveField.value === 'discount') {
+    syncPayAmountAfterDiscount()
+  }
+}
+
+function backspacePayKey() {
+  const draft = currentPayDraft()
+  draft.value = draft.value.slice(0, -1)
+  if (payActiveField.value === 'discount') {
+    syncPayAmountAfterDiscount()
+  }
+}
+
+function clearPayField() {
+  currentPayDraft().value = ''
+  if (payActiveField.value === 'discount') {
+    syncPayAmountAfterDiscount()
+  }
+}
+
+function syncPayAmountAfterDiscount() {
+  const sales = Number(order.value?.amount || 0)
+  const discount = Number(payDiscountDraft.value || 0)
+  const paid = Number(order.value?.paidAmount || 0)
+  const receivable = Math.max(0, sales - discount)
+  const outstanding = Math.max(0, receivable - paid)
+  payAmountDraft.value = outstanding > 0 ? String(outstanding) : '0'
+}
+
+async function submitMarkPayment() {
+  if (paySubmitting.value) return
+  const amount = Number(payAmountDraft.value || 0)
+  const discount = Number(payDiscountDraft.value || 0)
+  if (!amount || amount <= 0) {
+    uni.showToast({ title: '请输入收款金额', icon: 'none' })
+    return
+  }
+  paySubmitting.value = true
+  try {
+    order.value = await markBossOrderPayment(orderId.value, {
+      amount,
+      discount: discount > 0 ? discount : undefined,
+      method: payMethod.value,
+      remark: `订单${order.value?.orderNo || ''}收款`,
+    })
+    closeMarkPayment()
+    uni.showToast({ title: '已标记支付', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '收款失败', icon: 'none' })
+  } finally {
+    paySubmitting.value = false
+  }
+}
+
+function handleOutbound() {
+  const o = order.value
+  if (!o) return
+  if (o.status === 'CANCELLED') {
+    uni.showToast({ title: '已取消订单无法出库', icon: 'none' })
+    return
+  }
+  if (o.amount != null && !['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PENDING_PRICE'].includes(o.status)) {
+    uni.showToast({ title: '订单已录价完成', icon: 'none' })
+    return
+  }
+  uni.showModal({
+    title: '出库',
+    content: '按下单数量填入出库数并完成分拣，便于后续录价与对账。',
+    success: async (res) => {
+      if (!res.confirm) return
+      try {
+        order.value = await completeBossPick(orderId.value)
+        uni.showToast({ title: '出库完成', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : '出库失败', icon: 'none' })
+      }
+    },
+  })
+}
+
+function handleDeleteOrder() {
+  if (order.value?.status === 'CANCELLED') {
+    uni.showToast({ title: '订单已取消', icon: 'none' })
+    return
+  }
+  uni.showModal({
+    title: '删单',
+    content: '确认取消该订单？取消后不可恢复。',
+    confirmColor: '#c2352a',
+    success: async (res) => {
+      if (!res.confirm) return
+      try {
+        order.value = await updateBossOrderStatus(orderId.value, 'CANCELLED')
+        uni.showToast({ title: '订单已取消', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : '取消失败', icon: 'none' })
+      }
+    },
+  })
+}
+
+function openRemarkEditor() {
+  remarkDraft.value = order.value?.remark || ''
+  showRemarkEditor.value = true
+}
+
+async function saveRemark() {
+  const o = order.value
+  if (!o) return
+  const remark = remarkDraft.value.trim()
+  if (o.status === 'PRICED' || o.amount != null) {
+    uni.showToast({ title: '请在改单中修改备注', icon: 'none' })
+    showRemarkEditor.value = false
+    return
+  }
+  if (!canEditOrder.value) {
+    uni.showToast({ title: '当前状态请在改单中修改备注', icon: 'none' })
+    showRemarkEditor.value = false
+    return
+  }
+  const items = (o.items || []).map((line) => ({
+    productId: line.productId,
+    orderQty: Number(line.orderQty),
+    unit: line.unit,
+    dealPrice: line.dealPrice != null ? Number(line.dealPrice) : undefined,
+    pickRemark: line.pickRemark,
+  }))
+  try {
+    order.value = await updateBossOrder(orderId.value, {
+      remark,
+      items,
+      deliveryDate: o.deliveryDate,
+      customerName: o.customerId ? undefined : o.customerName,
+    })
+    showRemarkEditor.value = false
+    uni.showToast({ title: '备注已保存', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '保存失败', icon: 'none' })
+  }
+}
+
 function goEdit() {
   uni.navigateTo({ url: `/pages/boss/sales-order/index?orderId=${orderId.value}` })
+}
+
+function goPrint() {
+  uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${orderId.value}` })
 }
 
 async function handleConfirm() {
@@ -172,6 +794,7 @@ async function handleConfirm() {
 }
 
 function goPick() {
+  if (pickButtonDisabled.value) return
   uni.navigateTo({ url: `/pages/boss/orders/pick/index?id=${orderId.value}` })
 }
 
@@ -179,59 +802,43 @@ function goPricing() {
   uni.navigateTo({ url: `/pages/boss/pricing/detail/index?id=${orderId.value}` })
 }
 
-async function handlePublish() {
-  publishing.value = true
-  try {
-    order.value = await publishOrderPricing(orderId.value)
-    uni.showToast({ title: '已推送给客户', icon: 'success' })
-  } catch (e) {
-    uni.showToast({ title: e instanceof Error ? e.message : '推送失败', icon: 'none' })
-  } finally {
-    publishing.value = false
-  }
-}
-
-async function handleStatusSelect(item: { value?: string; name?: string }) {
-  showStatusPicker.value = false
-  const target = item.value
-  if (!target) return
-  uni.showModal({
-    title: '确认修改状态',
-    content: `将订单改为「${item.name || target}」？回退到待录价及之前会清空已录价格。`,
-    success: async (res) => {
-      if (!res.confirm) return
-      try {
-        order.value = await updateBossOrderStatus(orderId.value, target)
-        uni.showToast({ title: '状态已更新', icon: 'success' })
-      } catch (e) {
-        uni.showToast({ title: e instanceof Error ? e.message : '修改失败', icon: 'none' })
-      }
-    },
-  })
-}
-
-function statusType(status: string) {
-  if (status === 'PENDING_CONFIRM') return 'warning'
-  if (status === 'PRICED') return 'success'
-  if (status === 'COMPLETED') return 'success'
-  return 'primary'
-}
-
 function formatTime(value?: string) {
   if (!value) return '—'
   return value.replace('T', ' ').slice(0, 16)
+}
+
+function formatMoney(value?: number | null) {
+  if (value == null) return '—'
+  return Number(value).toFixed(2)
+}
+
+function outboundQty(line: OrderLineItem) {
+  if (line.actualQty == null) {
+    if (line.shortageFlag === 1) return `0${line.unit}`
+    return '未出库'
+  }
+  return `${line.actualQty}${line.unit}`
+}
+
+function lineSubtotal(line: OrderLineItem) {
+  if (line.subtotalAmount != null) return Number(line.subtotalAmount).toFixed(2)
+  if (line.dealPrice != null && line.actualQty != null) {
+    return (Number(line.actualQty) * Number(line.dealPrice)).toFixed(2)
+  }
+  return '—'
 }
 </script>
 
 <style scoped lang="scss">
 @import '../../../../styles/boss-footer.scss';
+@import '../../../../styles/boss-ui.scss';
 
 .page {
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f5f6f7;
+  background: linear-gradient(180deg, #e8f8ef 0%, $boss-bg 240rpx);
   box-sizing: border-box;
 }
 
@@ -243,37 +850,65 @@ function formatTime(value?: string) {
 .scroll-body {
   flex: 1;
   height: 0;
-  padding: 24rpx;
-  padding-bottom: calc(24rpx + 360rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 20rpx;
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
-.header,
-.items {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 28rpx;
-  margin-bottom: 24rpx;
+.status-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
 }
 
-.row-top {
+.status-chip {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  padding: 18rpx 16rpx;
+  background: $boss-surface;
+  border-radius: $boss-radius;
+  font-size: 28rpx;
+  color: $boss-ink-secondary;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.status-chip.pay {
+  color: $boss-green-deep;
+  font-weight: 600;
+}
+
+.info-card,
+.items-card {
+  background: $boss-surface;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.04);
+}
+
+.info-head {
+  display: flex;
   align-items: flex-start;
-  gap: 16rpx;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
 }
 
 .name-wrap {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 10rpx;
   flex: 1;
   min-width: 0;
 }
 
 .customer-name {
   font-size: 36rpx;
-  font-weight: 600;
+  font-weight: 700;
+  color: $boss-ink;
 }
 
 .temp-tag {
@@ -285,70 +920,491 @@ function formatTime(value?: string) {
   border-radius: 999rpx;
 }
 
-.meta {
-  display: block;
-  margin-top: 12rpx;
-  font-size: 26rpx;
-  color: #666;
+.source-tag {
+  flex-shrink: 0;
+  padding: 4rpx 14rpx;
+  font-size: 22rpx;
+  color: $boss-green-deep;
+  border: 1rpx solid $boss-green;
+  border-radius: 8rpx;
 }
 
-.remark {
-  display: block;
-  margin-top: 12rpx;
+.delivery-line {
+  margin-bottom: 20rpx;
+  font-size: 28rpx;
+}
+
+.delivery-label {
+  color: $boss-ink-secondary;
+}
+
+.delivery-value {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.info-grid {
+  border-top: 1rpx solid $boss-border;
+  padding-top: 8rpx;
+}
+
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 14rpx 0;
+  font-size: 28rpx;
+  line-height: 1.45;
+}
+
+.info-label {
+  width: 152rpx;
+  flex-shrink: 0;
+  color: $boss-ink-muted;
+}
+
+.info-value {
+  flex: 1;
+  color: $boss-ink;
+  word-break: break-all;
+}
+
+.status-text {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.order-remark {
+  margin-top: 8rpx;
+  padding: 16rpx;
+  background: #fafbfc;
+  border-radius: 12rpx;
   font-size: 26rpx;
   color: #e67e22;
 }
 
-.amount {
-  display: block;
-  margin-top: 16rpx;
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #27ae60;
+.finance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rpx;
+  margin-top: 20rpx;
+  background: $boss-border;
+  border-radius: 12rpx;
+  overflow: hidden;
 }
 
-.section-title {
+.finance-cell {
+  padding: 18rpx 20rpx;
+  background: #fafbfc;
+}
+
+.finance-label {
   display: block;
-  margin-bottom: 20rpx;
+  font-size: 24rpx;
+  color: $boss-ink-muted;
+}
+
+.finance-value {
+  display: block;
+  margin-top: 6rpx;
   font-size: 30rpx;
-  font-weight: 600;
+  font-weight: 700;
+  color: $boss-ink;
 }
 
-.line-item {
-  padding: 20rpx 0;
+.finance-value.muted {
+  color: #ccc;
+  font-weight: 400;
+}
+
+.finance-value.green {
+  color: $boss-green-deep;
+}
+
+.finance-value.red {
+  color: $boss-danger;
+}
+
+.items-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.items-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.items-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: $boss-ink;
+}
+
+.table-head,
+.table-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  font-size: 24rpx;
+}
+
+.table-head {
+  padding: 12rpx 0;
+  color: $boss-ink-muted;
+  border-bottom: 1rpx solid $boss-border;
+}
+
+.table-row {
+  padding: 18rpx 0;
   border-bottom: 1rpx solid #f2f3f5;
 }
 
-.line-item:last-child {
-  border-bottom: none;
+.col-name {
+  flex: 2;
+  min-width: 0;
 }
 
-.line-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.col-qty,
+.col-out,
+.col-price,
+.col-sub {
+  flex: 1;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .line-name {
-  font-size: 30rpx;
+  display: block;
+  font-size: 28rpx;
+  color: $boss-ink;
+  font-weight: 500;
 }
 
-.line-qty {
+.line-remark {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: $boss-ink-muted;
+}
+
+.col-out.done {
+  color: $boss-green-deep;
+  font-weight: 600;
+}
+
+.col-price,
+.col-sub {
+  font-size: 26rpx;
+  color: $boss-ink-secondary;
+}
+
+.price-warn-bar {
+  margin-top: 16rpx;
+  padding: 16rpx 0 4rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: $boss-warn;
+  border-top: 1rpx dashed $boss-border;
+}
+
+.detail-bar {
+  gap: 12rpx;
+  align-items: flex-end;
+}
+
+.bar-tool {
+  width: 88rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: $boss-ink-secondary;
+}
+
+.bar-outline {
+  flex-shrink: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 24rpx;
   font-size: 28rpx;
+  color: $boss-green-deep;
+  background: $boss-surface;
+  border: 2rpx solid $boss-green;
+  border-radius: $boss-radius;
+  font-weight: 600;
+}
+
+.bar-primary {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  background: $boss-green;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: $boss-radius;
+  border: none;
+}
+
+.bar-primary.picked {
+  background: #b8e6cc;
+  color: #fff;
+}
+
+.bar-primary::after {
+  border: none;
+}
+
+.more-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.more-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1001;
+  padding: 28rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: $boss-surface;
+  border-radius: 24rpx 24rpx 0 0;
+  box-sizing: border-box;
+}
+
+.more-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.more-grid-item {
+  width: 25%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18rpx 0 22rpx;
+}
+
+.more-grid-label {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: $boss-ink;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.more-cancel {
+  margin-top: 8rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: $boss-ink-secondary;
+  background: #f5f6f7;
+  border-radius: $boss-radius;
+}
+
+.remark-sheet {
+  position: fixed;
+  left: 40rpx;
+  right: 40rpx;
+  top: 50%;
+  z-index: 1002;
+  transform: translateY(-50%);
+  padding: 32rpx 28rpx;
+  background: $boss-surface;
+  border-radius: 20rpx;
+  box-sizing: border-box;
+}
+
+.remark-title {
+  display: block;
+  margin-bottom: 20rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: $boss-ink;
+}
+
+.remark-input {
+  width: 100%;
+  min-height: 160rpx;
+  padding: 20rpx;
+  font-size: 28rpx;
+  color: $boss-ink;
+  background: #f7f8f9;
+  border-radius: 12rpx;
+  box-sizing: border-box;
+}
+
+.remark-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.remark-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  font-size: 28rpx;
+  border-radius: $boss-radius;
+}
+
+.remark-btn.ghost {
+  color: $boss-ink-secondary;
+  background: #f0f1f2;
+}
+
+.remark-btn.primary {
+  color: #fff;
+  font-weight: 600;
+  background: $boss-green;
+}
+
+.pay-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.pay-sheet {
+  background: $boss-surface;
+  border-radius: 24rpx 24rpx 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 28rpx 12rpx;
+}
+
+.pay-close {
+  width: 72rpx;
+  font-size: 44rpx;
+  color: $boss-ink-muted;
+  line-height: 1;
+}
+
+.pay-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: $boss-ink;
+}
+
+.pay-head-spacer {
+  width: 72rpx;
+}
+
+.pay-sales {
+  display: block;
+  padding: 0 28rpx 20rpx;
+  font-size: 28rpx;
+  color: $boss-ink-secondary;
+}
+
+.pay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 28rpx 16rpx;
+  padding: 24rpx 28rpx;
+  background: #f5f6f7;
+  border-radius: 12rpx;
+  border: 2rpx solid transparent;
+}
+
+.pay-row.editable.active {
+  border-color: $boss-green;
+  background: #fff;
+}
+
+.pay-row-label {
+  font-size: 30rpx;
+  color: $boss-ink;
+}
+
+.pay-row-value {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: $boss-ink;
+}
+
+.pay-row-value.highlight {
+  color: #e67e22;
+}
+
+.pay-method {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8rpx 28rpx 20rpx;
+  padding: 24rpx 28rpx;
+  background: #f5f6f7;
+  border-radius: 12rpx;
+}
+
+.pay-method-label {
+  font-size: 30rpx;
+  color: $boss-ink;
+}
+
+.pay-method-value {
+  font-size: 28rpx;
+  color: $boss-ink-secondary;
+}
+
+.pay-keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 96rpx);
+  gap: 8rpx;
+  padding: 12rpx;
+  background: #eef0f2;
+  border-top: 1rpx solid #ddd;
+}
+
+.pay-keypad .key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 8rpx;
+  font-size: 36rpx;
+  font-weight: 500;
+}
+
+.pay-keypad .key.fn {
+  font-size: 26rpx;
   color: #666;
 }
 
-.line-sub {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #999;
+.pay-keypad .key.confirm {
+  grid-row: 3 / 5;
+  grid-column: 4;
+  background: $boss-green;
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
 }
 
-.line-price {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 26rpx;
-  color: #e67e22;
+.pay-keypad .key.blank {
+  visibility: hidden;
+  pointer-events: none;
 }
 </style>
