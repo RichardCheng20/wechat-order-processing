@@ -16,6 +16,11 @@
       </view>
     </view>
 
+    <view v-if="showSubscribeBar" class="subscribe-bar">
+      <text class="subscribe-text">客户下单后可发微信提醒，请先开启</text>
+      <view class="subscribe-btn" @tap="handleSubscribeNotify">开启提醒</view>
+    </view>
+
     <view class="tab-row">
       <view class="main-tabs">
         <view
@@ -75,7 +80,7 @@
             <text class="customer-name">{{ item.customerName || '未知客户' }}</text>
             <text class="order-no">{{ item.orderNo }}</text>
           </view>
-          <text class="pay-status">{{ item.paymentStatusLabel || '未支付' }}</text>
+          <text class="pay-status" :class="payStatusClass(item)">{{ item.paymentStatusLabel || '待收款' }}</text>
         </view>
 
         <view v-if="item.sourceLabel" class="source-tag">
@@ -97,6 +102,11 @@
             <text v-if="item.amountText" class="amount-text">{{ item.amountText }}</text>
             <text v-if="item.priceIncomplete" class="price-warn">(价格未录完)</text>
           </text>
+        </view>
+
+        <view v-if="showCustomerDebt(item)" class="debt-line">
+          <text class="debt-label">客户欠款</text>
+          <text class="debt-value">¥ {{ formatCustomerDebt(item.customerOutstandingAmount) }}</text>
         </view>
 
         <OrderFlowBar :steps="item.flowSteps" @tap="(key) => onFlowTap(key, item)" />
@@ -166,9 +176,9 @@
     <u-modal
       :show="priceModalVisible"
       title="提示"
-      content="打印订单中存在价格未录完的商品，是否继续打印？"
+      content="对账单中存在价格未录完的商品，是否继续发送？"
       :show-cancel-button="true"
-      cancel-text="继续打印"
+      cancel-text="继续发送"
       confirm-text="返回改价"
       confirm-color="#22c55e"
       @cancel="continuePrint"
@@ -182,6 +192,7 @@
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
 import { fetchBossOrders, type OrderInfo } from '../../../api/order'
+import { fetchMiniProgramConfig } from '../../../api/config'
 import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
 import OrderDateRangePicker from '../../../components/OrderDateRangePicker.vue'
@@ -189,11 +200,13 @@ import OrderFlowBar from '../../../components/OrderFlowBar.vue'
 import { useUserStore } from '../../../stores/user'
 import {
   buildOrderFlowSteps,
+  isPaid,
   isPickDone,
   isPriced,
   type FlowStepKey,
   type OrderFlowStep,
 } from '../../../utils/order-flow'
+import { requestOrderNotifySubscribe } from '../../../utils/wechat-subscribe'
 
 interface OrderDisplay extends OrderInfo {
   createdAtText: string
@@ -214,6 +227,7 @@ const filterPopupVisible = ref(false)
 const rangePickerVisible = ref(false)
 const priceModalVisible = ref(false)
 const pendingPrintOrderId = ref(0)
+const showSubscribeBar = ref(false)
 
 const draftDateType = ref<DateType>('DELIVERY')
 const draftPreset = ref<PresetKey>('')
@@ -281,8 +295,18 @@ onShow(async () => {
     uni.reLaunch({ url: '/pages/login/index' })
     return
   }
+  try {
+    const config = await fetchMiniProgramConfig()
+    showSubscribeBar.value = !!config.orderNotifyTemplateId
+  } catch {
+    showSubscribeBar.value = false
+  }
   await refresh()
 })
+
+function handleSubscribeNotify() {
+  requestOrderNotifySubscribe()
+}
 
 async function refresh() {
   loading.value = true
@@ -498,6 +522,20 @@ function formatAmount(amount?: number) {
   return ` ¥${Number(amount).toFixed(2)}`
 }
 
+function formatCustomerDebt(amount?: number) {
+  return Number(amount || 0).toFixed(2)
+}
+
+function showCustomerDebt(item: OrderInfo) {
+  return !!item.printed && (item.customerOutstandingAmount || 0) > 0
+}
+
+function payStatusClass(item: OrderInfo) {
+  if (isPaid(item)) return 'paid'
+  if (item.amount != null && !isPaid(item)) return 'unpaid'
+  return ''
+}
+
 const PICKABLE_STATUSES = ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE']
 
 function canPick(item: OrderInfo) {
@@ -600,6 +638,32 @@ function showBatchTip() {
   gap: 16rpx;
   padding: 16rpx 24rpx;
   background: #fff;
+}
+
+.subscribe-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 24rpx;
+  background: #fff7e8;
+  border-bottom: 1rpx solid #f0e4cc;
+}
+
+.subscribe-text {
+  flex: 1;
+  font-size: 24rpx;
+  color: #8a6a2f;
+  line-height: 1.4;
+}
+
+.subscribe-btn {
+  flex-shrink: 0;
+  padding: 10rpx 20rpx;
+  font-size: 24rpx;
+  color: #fff;
+  background: #07c160;
+  border-radius: 999rpx;
 }
 
 .search-input-wrap {
@@ -984,6 +1048,16 @@ function showBatchTip() {
   color: #999;
 }
 
+.pay-status.unpaid {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.pay-status.paid {
+  color: #16a34a;
+  font-weight: 600;
+}
+
 .source-tag {
   display: inline-flex;
   margin-top: 16rpx;
@@ -1021,5 +1095,26 @@ function showBatchTip() {
 
 .price-warn {
   color: #f59e0b;
+}
+
+.debt-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  background: #fff7f0;
+  border-radius: 10rpx;
+}
+
+.debt-label {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.debt-value {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e67e22;
 }
 </style>

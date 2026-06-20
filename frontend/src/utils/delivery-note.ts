@@ -1,4 +1,5 @@
 import type { OrderInfo, OrderLineItem } from '../api/order'
+import { isPaid } from './order-flow'
 
 export interface DeliveryNoteRow {
   index: number
@@ -16,6 +17,7 @@ export interface DeliveryNoteData {
   rows: DeliveryNoteRow[]
   totalAmount: number | null
   priceIncomplete: boolean
+  paymentStamp?: 'paid' | null
 }
 
 function lineQty(item: OrderLineItem) {
@@ -59,6 +61,7 @@ export function buildDeliveryNote(order: OrderInfo): DeliveryNoteData {
     rows,
     totalAmount,
     priceIncomplete,
+    paymentStamp: isPaid(order) ? 'paid' : null,
   }
 }
 
@@ -174,6 +177,39 @@ export function drawDeliveryNoteCanvas(
   ctx.setFontSize(18)
   ctx.setFillStyle('#666666')
   ctx.fillText('页码：1 / 1', CANVAS_WIDTH / 2, canvasHeight - 24)
+
+  if (note.paymentStamp === 'paid') {
+    drawPaidStamp(ctx, CANVAS_WIDTH, canvasHeight)
+  }
+}
+
+function drawPaidStamp(ctx: UniApp.CanvasContext, canvasWidth: number, canvasHeight: number) {
+  const cx = canvasWidth - 150
+  const cy = canvasHeight - 130
+  const radius = 72
+
+  ctx.save()
+  ctx.setGlobalAlpha(0.88)
+  ctx.setStrokeStyle('#07c160')
+  ctx.setLineWidth(5)
+  ctx.beginPath()
+  ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+  ctx.stroke()
+
+  ctx.setFillStyle('#07c160')
+  ctx.setFontSize(24)
+  ctx.setTextAlign('center')
+  ctx.fillText('已收款', cx, cy - 10)
+
+  ctx.setLineWidth(6)
+  ctx.setLineCap('round')
+  ctx.setLineJoin('round')
+  ctx.beginPath()
+  ctx.moveTo(cx - 30, cy + 16)
+  ctx.lineTo(cx - 8, cy + 38)
+  ctx.lineTo(cx + 34, cy - 8)
+  ctx.stroke()
+  ctx.restore()
 }
 
 export const DELIVERY_NOTE_CANVAS = {
@@ -181,8 +217,10 @@ export const DELIVERY_NOTE_CANVAS = {
   calcHeight: calcCanvasHeight,
 }
 
-export function exportDeliveryNoteImage(note: DeliveryNoteData): Promise<string> {
-  const canvasId = 'deliveryNoteCanvas'
+export function exportDeliveryNoteImage(
+  note: DeliveryNoteData,
+  canvasId = 'deliveryNoteCanvas',
+): Promise<string> {
   const height = calcCanvasHeight(note.rows.length)
   const ctx = uni.createCanvasContext(canvasId)
   drawDeliveryNoteCanvas(ctx, note, height)

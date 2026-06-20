@@ -37,5 +37,7 @@ public class AppProperties {
     public static class Wechat {
         private String appId;
         private String appSecret;
+        /** 客户提醒老板：订阅消息模板 ID，需与微信公众平台模板字段 thing1/character_string2/thing3/time4 对应 */
+        private String orderNotifyTemplateId;
     }
 }

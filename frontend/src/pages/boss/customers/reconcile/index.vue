@@ -36,7 +36,7 @@
           <view class="card-body">
             <view class="card-head">
               <text class="delivery-text">配送: {{ formatDelivery(item.deliveryDate) }}</text>
-              <text class="pay-status">{{ item.paymentStatusLabel || '未支付' }}</text>
+              <text class="pay-status">{{ item.paymentStatusLabel || '待收款' }}</text>
             </view>
             <text class="order-no">订单编号 {{ item.orderNo }}</text>
             <view class="amount-row">
@@ -170,7 +170,7 @@ async function loadOrders() {
   try {
     orders.value = await fetchBossOrders({
       customerId: customerId.value,
-      status: 'COMPLETED',
+      receivableOnly: true,
       paymentFilter: paymentTab.value,
       dateType: 'DELIVERY',
       dateFrom: dateFrom.value,

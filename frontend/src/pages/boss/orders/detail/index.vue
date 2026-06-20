@@ -9,11 +9,18 @@
         <view class="status-row">
           <view class="status-chip">
             <AppIcon name="order" tone="gray" :size="16" :tile-size="36" :radius="10" :tile="true" />
-            <text>{{ order.printed ? '已打印' : '未打印' }}</text>
+            <text>{{ order.printed ? '已对账' : '待对账' }}</text>
           </view>
-          <view class="status-chip pay">
-            <AppIcon name="salesPayment" tone="green" :size="16" :tile-size="36" :radius="10" :tile="true" />
-            <text>{{ order.paymentStatusLabel || '未支付' }}</text>
+          <view class="status-chip pay-display" :class="paymentStatusClass">
+            <AppIcon
+              name="salesPayment"
+              :tone="isOrderPaid ? 'green' : 'red'"
+              :size="16"
+              :tile-size="36"
+              :radius="10"
+              :tile="true"
+            />
+            <text>{{ paymentStatusText }}</text>
           </view>
         </view>
 
@@ -132,7 +139,7 @@
           <AppIcon name="pricing" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
           <text>改单</text>
         </view>
-        <view class="bar-outline" @tap="goPrint">打印单据</view>
+        <view class="bar-outline" @tap="goPrint">发送对账单</view>
         <button
           v-if="showPickAction"
           class="bar-primary"
@@ -156,7 +163,22 @@
         >
           去录价
         </button>
+        <button
+          v-else-if="showPaymentAction"
+          class="bar-pay"
+          :class="{ paid: isOrderPaid }"
+          @tap="handlePaymentTap"
+        >
+          {{ paymentActionLabel }}
+        </button>
       </view>
+
+      <canvas
+        canvas-id="orderDetailNoteCanvas"
+        id="orderDetailNoteCanvas"
+        class="hidden-canvas"
+        :style="{ width: `${DELIVERY_NOTE_CANVAS.width}px`, height: `${statementCanvasHeight}px` }"
+      />
     </template>
 
     <view v-if="showMoreActions" class="more-mask" @tap="showMoreActions = false" />
@@ -202,7 +224,7 @@
       <view class="pay-sheet" @tap.stop>
         <view class="pay-head">
           <text class="pay-close" @tap="closeMarkPayment">×</text>
-          <text class="pay-title">标记支付</text>
+          <text class="pay-title">标记收款</text>
           <text class="pay-head-spacer" />
         </view>
         <text class="pay-sales">销售金额：{{ formatMoney(order?.amount) }}元</text>
@@ -229,7 +251,7 @@
         </view>
 
         <view class="pay-method" @tap="pickPayMethod">
-          <text class="pay-method-label">支付方式</text>
+          <text class="pay-method-label">收款方式</text>
           <text class="pay-method-value">{{ payMethodLabel }} ›</text>
         </view>
 
@@ -272,10 +294,17 @@ import {
   type OrderLineItem,
 } from '../../../../api/order'
 import { completeBossPick, fetchBossPickPrices } from '../../../../api/pick'
-import { updateBossProduct } from '../../../../api/product'
+import { uploadPaymentVoucher } from '../../../../api/payment'
+import { syncQuoteFromOrder } from '../../../../api/quote'
 import AppIcon from '../../../../components/AppIcon.vue'
 import { deliveryDateString, useSalesOrderStore } from '../../../../stores/salesOrder'
 import { useUserStore } from '../../../../stores/user'
+import {
+  buildDeliveryNote,
+  DELIVERY_NOTE_CANVAS,
+  exportDeliveryNoteImage,
+} from '../../../../utils/delivery-note'
+import { isPaid } from '../../../../utils/order-flow'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -370,6 +399,31 @@ const showPriceButton = computed(() => {
     && order.value.amount == null
 })
 
+const isOrderPaid = computed(() => (order.value ? isPaid(order.value) : false))
+
+const paymentStatusText = computed(() => {
+  if (!order.value) return '待收款'
+  if (isOrderPaid.value) return '已收款'
+  return order.value.paymentStatusLabel?.includes('部分') ? order.value.paymentStatusLabel : '待收款'
+})
+
+const paymentStatusClass = computed(() => (isOrderPaid.value ? 'paid' : 'unpaid'))
+
+const showPaymentAction = computed(() => {
+  const o = order.value
+  if (!o || o.status === 'CANCELLED' || o.amount == null) return false
+  if (showPickAction.value || showPriceButton.value) return false
+  if (o.status === 'PENDING_CONFIRM') return false
+  return true
+})
+
+const paymentActionLabel = computed(() => (isOrderPaid.value ? '已收款' : '标记收款'))
+
+const statementCanvasHeight = computed(() => {
+  const rows = order.value?.items?.length || 1
+  return DELIVERY_NOTE_CANVAS.calcHeight(rows)
+})
+
 const isTemporaryOrder = computed(() => !order.value?.customerId)
 
 const moreMenuItems = computed<MoreMenuItem[]>(() => {
@@ -379,7 +433,6 @@ const moreMenuItems = computed<MoreMenuItem[]>(() => {
     { key: 'syncPrice', label: '同步价格', icon: 'quote', tone: 'orange' },
     { key: 'voucher', label: '添加凭证', icon: 'camera', tone: 'gray' },
     { key: 'outbound', label: '出库', icon: 'inventory', tone: 'gray' },
-    { key: 'markPaid', label: '标记支付', icon: 'salesPayment', tone: 'green' },
     { key: 'delete', label: '删单', icon: 'delete', tone: 'red' },
     { key: 'remark', label: '备注', icon: 'pricing', tone: 'gray' },
   ]
@@ -440,9 +493,6 @@ function handleMoreMenu(key: string) {
       break
     case 'outbound':
       handleOutbound()
-      break
-    case 'markPaid':
-      openMarkPayment()
       break
     case 'delete':
       handleDeleteOrder()
@@ -532,7 +582,12 @@ async function syncPriceFromQuote() {
 }
 
 async function syncPriceToQuote() {
-  const items = (order.value?.items || []).filter(
+  const o = order.value
+  if (!o?.customerId) {
+    uni.showToast({ title: '散客订单请先关联客户', icon: 'none' })
+    return
+  }
+  const items = (o.items || []).filter(
     (line) => line.productId && line.dealPrice != null,
   )
   if (!items.length) {
@@ -541,16 +596,14 @@ async function syncPriceToQuote() {
   }
   uni.showModal({
     title: '同步价格',
-    content: `将 ${items.length} 个商品的成交价写回商品默认价？`,
+    content: `将 ${items.length} 个商品的成交价写入该客户报价单？`,
     success: async (res) => {
       if (!res.confirm) return
       if (syncingPrice.value) return
       syncingPrice.value = true
       try {
-        for (const line of items) {
-          await updateBossProduct(line.productId, { defaultPrice: Number(line.dealPrice) })
-        }
-        uni.showToast({ title: '已同步到报价单', icon: 'success' })
+        const result = await syncQuoteFromOrder(orderId.value)
+        uni.showToast({ title: `已同步 ${result.syncedCount} 个商品价`, icon: 'success' })
       } catch (e) {
         uni.showToast({ title: e instanceof Error ? e.message : '同步失败', icon: 'none' })
       } finally {
@@ -575,6 +628,14 @@ function goPayment() {
     params.push(`customerName=${encodeURIComponent(o.customerName)}`)
   }
   uni.navigateTo({ url: `/pages/boss/sales-payment/index?${params.join('&')}` })
+}
+
+function handlePaymentTap() {
+  if (isOrderPaid.value) {
+    uni.showToast({ title: '该订单已收款', icon: 'none' })
+    return
+  }
+  openMarkPayment()
 }
 
 function openMarkPayment() {
@@ -666,23 +727,54 @@ function syncPayAmountAfterDiscount() {
 
 async function submitMarkPayment() {
   if (paySubmitting.value) return
+  const o = order.value
+  if (!o) return
   const amount = Number(payAmountDraft.value || 0)
   const discount = Number(payDiscountDraft.value || 0)
   if (!amount || amount <= 0) {
     uni.showToast({ title: '请输入收款金额', icon: 'none' })
     return
   }
+  const sales = Number(o.amount || 0)
+  const receivable = Math.max(0, sales - discount)
+  const paid = Number(o.paidAmount || 0)
+  const outstanding = Math.max(0, receivable - paid)
+  const willFullyPaid = amount >= outstanding
+
   paySubmitting.value = true
   try {
+    let statementImageUrl: string | undefined
+    if (willFullyPaid && o.printed) {
+      uni.showLoading({ title: '更新对账单' })
+      try {
+        const previewOrder: OrderInfo = {
+          ...o,
+          paidAmount: paid + amount,
+          receivableAmount: receivable,
+          outstandingAmount: 0,
+          paymentStatusLabel: '已收款',
+        }
+        const note = buildDeliveryNote(previewOrder)
+        const filePath = await exportDeliveryNoteImage(note, 'orderDetailNoteCanvas')
+        statementImageUrl = await uploadPaymentVoucher(filePath)
+      } catch {
+        // 收款成功优先，对账单盖章失败不阻断
+      } finally {
+        uni.hideLoading()
+      }
+    }
+
     order.value = await markBossOrderPayment(orderId.value, {
       amount,
       discount: discount > 0 ? discount : undefined,
       method: payMethod.value,
-      remark: `订单${order.value?.orderNo || ''}收款`,
+      remark: `订单${o.orderNo || ''}收款`,
+      statementImageUrl,
     })
     closeMarkPayment()
-    uni.showToast({ title: '已标记支付', icon: 'success' })
+    uni.showToast({ title: '已标记收款', icon: 'success' })
   } catch (e) {
+    uni.hideLoading()
     uni.showToast({ title: e instanceof Error ? e.message : '收款失败', icon: 'none' })
   } finally {
     paySubmitting.value = false
@@ -875,7 +967,12 @@ function lineSubtotal(line: OrderLineItem) {
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
 }
 
-.status-chip.pay {
+.status-chip.pay-display.unpaid {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.status-chip.pay-display.paid {
   color: $boss-green-deep;
   font-weight: 600;
 }
@@ -1160,6 +1257,36 @@ function lineSubtotal(line: OrderLineItem) {
 
 .bar-primary::after {
   border: none;
+}
+
+.bar-pay {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  background: #dc2626;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: $boss-radius;
+  border: none;
+}
+
+.bar-pay.paid {
+  background: $boss-green;
+}
+
+.bar-pay::after {
+  border: none;
+}
+
+.hidden-canvas {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .more-mask {

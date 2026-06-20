@@ -17,13 +17,14 @@
       </view>
 
       <view class="list">
-        <view v-for="item in cartStore.items" :key="`${item.productId}-${item.unit}`" class="card">
+        <view v-for="item in cartStore.items" :key="`${item.productId}-${item.unit}`" class="card" @tap="editCartItem(item)">
           <AppIcon class="cart-item-icon" name="product" tone="green" :size="25" />
           <view class="main">
             <text class="name">{{ item.name }}</text>
-            <text class="unit">{{ item.unit }}</text>
+            <text class="unit">{{ item.qty }}{{ item.unit }}</text>
+            <text v-if="item.remark" class="item-remark">备注：{{ item.remark }}</text>
           </view>
-          <view class="side">
+          <view class="side" @tap.stop>
             <view class="qty-btn" @tap="changeQty(item.productId, item.unit, -1)">-</view>
             <text class="qty">{{ item.qty }}</text>
             <view class="qty-btn add" @tap="changeQty(item.productId, item.unit, 1)">+</view>
@@ -78,6 +79,27 @@ function changeQty(productId: number, unit: string, delta: number) {
   cartStore.setQty(productId, item.qty + delta, unit)
 }
 
+function editCartItem(item: { productId: number; unit: string; remark?: string }) {
+  uni.showModal({
+    title: '商品备注',
+    editable: true,
+    placeholderText: '如：要大一点的、小土豆',
+    content: item.remark || '',
+    success: (res) => {
+      if (!res.confirm || res.content == null) return
+      const line = cartStore.items.find((entry) => entry.productId === item.productId && entry.unit === item.unit)
+      if (!line) return
+      cartStore.upsertLine({
+        productId: line.productId,
+        name: line.name,
+        unit: line.unit,
+        qty: line.qty,
+        remark: res.content.trim() || undefined,
+      })
+    },
+  })
+}
+
 async function handleSubmit() {
   if (cartStore.items.length === 0) return
 
@@ -97,6 +119,7 @@ async function handleSubmit() {
         productId: item.productId,
         orderQty: item.qty,
         unit: item.unit,
+        pickRemark: item.remark || undefined,
       })),
       remark: remark.value || undefined,
       ...(userStore.customerId ? {} : { customerName: shopName.value.trim() }),
@@ -115,7 +138,7 @@ async function handleSubmit() {
 }
 
 function goHome() {
-  uni.navigateBack()
+  uni.navigateTo({ url: '/pages/customer/home/index' })
 }
 </script>
 
@@ -193,6 +216,14 @@ function goHome() {
   margin-top: 8rpx;
   font-size: 28rpx;
   color: #66736b;
+}
+
+.item-remark {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #e67e22;
+  line-height: 1.4;
 }
 
 .side {

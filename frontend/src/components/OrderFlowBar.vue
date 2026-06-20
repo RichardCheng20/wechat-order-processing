@@ -106,6 +106,16 @@ const emit = defineEmits<{
   font-weight: 600;
 }
 
+.flow-step.danger {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.flow-step.danger .flow-label {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 .flow-step.cancelled {
   background: #fef2f2;
   border-color: #fecaca;

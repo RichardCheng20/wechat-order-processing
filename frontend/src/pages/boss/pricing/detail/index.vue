@@ -130,9 +130,15 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    order.value = await submitOrderPricing(orderId.value, items)
-    readonly.value = true
-    uni.showToast({ title: '录价完成', icon: 'success' })
+    await submitOrderPricing(orderId.value, items)
+    uni.showToast({ title: '录价完成，即将返回上一页', icon: 'success' })
+    setTimeout(() => {
+      uni.navigateBack({
+        fail: () => {
+          uni.redirectTo({ url: '/pages/boss/pricing/index' })
+        },
+      })
+    }, 800)
   } catch (e) {
     uni.showToast({ title: e instanceof Error ? e.message : '提交失败', icon: 'none', duration: 3000 })
   } finally {

@@ -31,9 +31,9 @@ public class BossPaymentController {
         return ApiResponse.ok(paymentService.create(request));
     }
 
-    @Operation(summary = "客户收款记录")
+    @Operation(summary = "收款记录")
     @GetMapping("/payments")
-    public ApiResponse<List<PaymentVO>> list(@RequestParam Long customerId) {
-        return ApiResponse.ok(paymentService.listByCustomer(customerId));
+    public ApiResponse<List<PaymentVO>> list(@RequestParam(required = false) Long customerId) {
+        return ApiResponse.ok(paymentService.listForBoss(customerId));
     }
 }

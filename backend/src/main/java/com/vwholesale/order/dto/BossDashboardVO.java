@@ -11,6 +11,8 @@ public class BossDashboardVO {
 
     private BigDecimal todaySales;
     private BigDecimal todayProfit;
+    private BigDecimal todayPurchaseCost;
     private BigDecimal totalReceivable;
+    private BigDecimal totalReceived;
     private BigDecimal totalPayable;
 }

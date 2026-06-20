@@ -1,4 +1,4 @@
-import { API_BASE_URL, REQUEST_TIMEOUT } from '../utils/config'
+import { getApiBaseUrl, REQUEST_TIMEOUT } from '../utils/config'
 
 export interface ApiResult<T = unknown> {
   code: number
@@ -17,11 +17,12 @@ function appendQuery(url: string, params?: Record<string, string | number | unde
 }
 
 function normalizeFailError(err: UniApp.GeneralCallbackResult) {
+  const base = getApiBaseUrl()
   const raw = `${err.errMsg || ''}`
   if (raw.includes('timeout')) {
-    return new Error(`连接超时(${API_BASE_URL})`)
+    return new Error(`连接超时(${base})`)
   }
-  return new Error(`网络错误(${API_BASE_URL})`)
+  return new Error(`网络错误(${base})`)
 }
 
 function doRequest<T>(options: UniApp.RequestOptions): Promise<T> {
@@ -60,7 +61,7 @@ export function request<T>(options: UniApp.RequestOptions & {
   retry?: number
 }) {
   const { query, data, retry = 0, ...rest } = options
-  const url = appendQuery(`${API_BASE_URL}${options.url}`, query)
+  const url = appendQuery(`${getApiBaseUrl()}${options.url}`, query)
   const payload = {
     ...rest,
     url,

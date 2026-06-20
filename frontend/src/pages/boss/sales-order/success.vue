@@ -19,7 +19,7 @@
         <text class="sync-title">更新报价单</text>
         <text class="sync-sub">同步商品价格至该客户的报价单</text>
       </view>
-      <text class="sync-btn" @tap="showComingSoon('一键同步')">一键同步</text>
+      <text class="sync-btn" @tap="syncQuote">一键同步</text>
     </view>
   </view>
 </template>
@@ -29,6 +29,7 @@ import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useSalesOrderStore } from '../../../stores/salesOrder'
 import { useUserStore } from '../../../stores/user'
+import { syncQuoteFromOrder } from '../../../api/quote'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -63,6 +64,19 @@ function goDetail() {
 
 function showComingSoon(name: string) {
   uni.showToast({ title: `${name}即将上线`, icon: 'none' })
+}
+
+async function syncQuote() {
+  if (!orderId.value) {
+    uni.showToast({ title: '订单不存在', icon: 'none' })
+    return
+  }
+  try {
+    const result = await syncQuoteFromOrder(orderId.value)
+    uni.showToast({ title: `已同步 ${result.syncedCount} 个商品价`, icon: 'success' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '同步失败', icon: 'none' })
+  }
 }
 </script>
 

@@ -20,6 +20,7 @@ public class OrderItem {
     private String originalText;
     private BigDecimal orderQty;
     private BigDecimal actualQty;
+    private BigDecimal stockAppliedQty;
     private String unit;
     private BigDecimal dealPrice;
     private BigDecimal subtotalAmount;

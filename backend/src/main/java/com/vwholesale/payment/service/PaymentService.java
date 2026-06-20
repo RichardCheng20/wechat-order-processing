@@ -9,8 +9,11 @@ import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.support.OrderReceivableRules;
 import com.vwholesale.payment.dto.PaymentCreateRequest;
 import com.vwholesale.payment.dto.PaymentVO;
+import com.vwholesale.payment.dto.BossPaymentStatsVO;
+import com.vwholesale.payment.dto.PaymentDailyRow;
 import com.vwholesale.payment.entity.Payment;
 import com.vwholesale.payment.mapper.PaymentMapper;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +22,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.ArrayList;
 
 @Service
 @RequiredArgsConstructor
@@ -72,6 +81,65 @@ public class PaymentService {
         return toVO(payment, customer.getName());
     }
 
+    public List<PaymentVO> listForBoss(Long customerId) {
+        RoleChecker.requireBoss();
+        if (customerId != null) {
+            return listByCustomer(customerId);
+        }
+        Long merchantId = merchantContext.currentMerchantId();
+        List<Payment> payments = paymentMapper.selectList(new LambdaQueryWrapper<Payment>()
+                .eq(Payment::getMerchantId, merchantId)
+                .orderByDesc(Payment::getPaidAt)
+                .orderByDesc(Payment::getId)
+                .last("LIMIT 200"));
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> customerIds = payments.stream().map(Payment::getCustomerId).collect(Collectors.toSet());
+        Map<Long, String> customerNames = customerMapper.selectBatchIds(customerIds).stream()
+                .collect(Collectors.toMap(Customer::getId, Customer::getName));
+        return payments.stream()
+                .map(p -> toVO(p, customerNames.getOrDefault(p.getCustomerId(), "未知客户")))
+                .toList();
+    }
+
+    public BossPaymentStatsVO paymentStats(LocalDate dateFrom, LocalDate dateTo) {
+        RoleChecker.requireBoss();
+        if (dateFrom == null || dateTo == null) {
+            throw BusinessException.of(400, "请选择日期范围");
+        }
+        if (dateFrom.isAfter(dateTo)) {
+            throw BusinessException.of(400, "开始日期不能晚于结束日期");
+        }
+        Long merchantId = merchantContext.currentMerchantId();
+        List<Payment> payments = paymentMapper.selectList(new LambdaQueryWrapper<Payment>()
+                .eq(Payment::getMerchantId, merchantId)
+                .ge(Payment::getPaidAt, dateFrom.atStartOfDay())
+                .lt(Payment::getPaidAt, dateTo.plusDays(1).atStartOfDay()));
+
+        Map<LocalDate, BigDecimal> grouped = new HashMap<>();
+        for (Payment payment : payments) {
+            if (payment.getPaidAt() == null) {
+                continue;
+            }
+            LocalDate day = payment.getPaidAt().toLocalDate();
+            grouped.merge(day, payment.getAmount(), BigDecimal::add);
+        }
+
+        List<PaymentDailyRow> rows = new ArrayList<>();
+        BigDecimal totalReceived = BigDecimal.ZERO;
+        for (LocalDate day = dateFrom; !day.isAfter(dateTo); day = day.plusDays(1)) {
+            BigDecimal amount = grouped.getOrDefault(day, BigDecimal.ZERO);
+            rows.add(PaymentDailyRow.builder().date(day).amount(amount).build());
+            totalReceived = totalReceived.add(amount);
+        }
+
+        return BossPaymentStatsVO.builder()
+                .totalReceived(totalReceived)
+                .rows(rows)
+                .build();
+    }
+
     public List<PaymentVO> listByCustomer(Long customerId) {
         RoleChecker.requireBoss();
         Long merchantId = merchantContext.currentMerchantId();
@@ -93,9 +161,12 @@ public class PaymentService {
         List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getCustomerId, customerId)
                 .eq(Order::getMerchantId, merchantId)
-                .eq(Order::getStatus, OrderStatus.COMPLETED)
+                .ne(Order::getStatus, OrderStatus.CANCELLED)
                 .orderByAsc(Order::getDeliveryDate)
-                .orderByAsc(Order::getCreatedAt));
+                .orderByAsc(Order::getCreatedAt))
+                .stream()
+                .filter(OrderReceivableRules::countsTowardCustomerDebt)
+                .toList();
 
         BigDecimal remaining = amount;
         Long linkedOrderId = null;
@@ -105,7 +176,7 @@ public class PaymentService {
             if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
                 break;
             }
-            BigDecimal outstanding = outstandingReceivable(order);
+            BigDecimal outstanding = OrderReceivableRules.outstandingReceivable(order);
             if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
@@ -124,15 +195,6 @@ public class PaymentService {
             payment.setOrderId(linkedOrderId);
             paymentMapper.updateById(payment);
         }
-    }
-
-    private BigDecimal outstandingReceivable(Order order) {
-        BigDecimal receivable = order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
-        if (receivable == null) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
-        return receivable.subtract(paid);
     }
 
     private String trimRemark(String remark) {

@@ -16,4 +16,5 @@ public class OrderItemCreateRequest {
     @DecimalMin(value = "0.01", message = "数量必须大于0")
     private BigDecimal orderQty;
     private String unit;
+    private String pickRemark;
 }

@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +49,7 @@ public class OrderPickService {
     private final ProductMapper productMapper;
     private final ProductPriceService productPriceService;
     private final OrderService orderService;
+    private final OrderItemStockService orderItemStockService;
     private final MerchantContext merchantContext;
 
     public OrderVO getPickDetail(Long orderId) {
@@ -85,7 +85,6 @@ public class OrderPickService {
             throw BusinessException.of(404, "订单明细不存在");
         }
 
-        BigDecimal previousQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
         if (request.getActualQty() != null) {
             item.setActualQty(clampActualQty(item, request.getActualQty()));
         }
@@ -102,8 +101,7 @@ public class OrderPickService {
             }
         }
         orderItemMapper.updateById(item);
-        BigDecimal newQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
-        applyStockDelta(item.getProductId(), previousQty, newQty);
+        orderItemStockService.syncPickStock(item);
         return orderService.getDetail(orderId);
     }
 
@@ -114,12 +112,11 @@ public class OrderPickService {
         ensureEditing(order);
         List<OrderItem> items = listItems(orderId);
         for (OrderItem item : items) {
-            BigDecimal previousQty = item.getActualQty() != null ? item.getActualQty() : BigDecimal.ZERO;
             BigDecimal targetQty = item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO;
             item.setActualQty(targetQty);
             item.setShortageFlag(0);
             orderItemMapper.updateById(item);
-            applyStockDelta(item.getProductId(), previousQty, targetQty);
+            orderItemStockService.syncPickStock(item);
         }
         return orderService.getDetail(orderId);
     }
@@ -178,6 +175,7 @@ public class OrderPickService {
                 item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
             orderItemMapper.updateById(item);
+            orderItemStockService.syncPickStock(item);
         }
 
         order.setStatus(OrderStatus.PENDING_PRICE);
@@ -235,24 +233,4 @@ public class OrderPickService {
         return actualQty;
     }
 
-    private void applyStockDelta(Long productId, BigDecimal previousQty, BigDecimal newQty) {
-        if (productId == null) {
-            return;
-        }
-        BigDecimal before = previousQty != null ? previousQty : BigDecimal.ZERO;
-        BigDecimal after = newQty != null ? newQty : BigDecimal.ZERO;
-        BigDecimal delta = after.subtract(before);
-        if (delta.compareTo(BigDecimal.ZERO) == 0) {
-            return;
-        }
-        Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
-                .eq(Product::getId, productId)
-                .eq(Product::getMerchantId, merchantContext.currentMerchantId()));
-        if (product == null) {
-            return;
-        }
-        BigDecimal stock = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
-        product.setStockQty(stock.subtract(delta).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
-        productMapper.updateById(product);
-    }
 }

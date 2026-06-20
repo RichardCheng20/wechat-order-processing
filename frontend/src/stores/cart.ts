@@ -5,6 +5,7 @@ export interface CartItem {
   name: string
   unit: string
   qty: number
+  remark?: string
 }
 
 const CART_KEY = 'customer_cart'
@@ -79,19 +80,21 @@ export const useCartStore = defineStore('cart', {
       saveCart(this.items)
     },
 
-    upsertLine(line: { productId: number; name: string; unit: string; qty: number }) {
+    upsertLine(line: { productId: number; name: string; unit: string; qty: number; remark?: string }) {
       const existing = this.items.find(
         (i) => i.productId === line.productId && i.unit === line.unit,
       )
       if (existing) {
         existing.qty = line.qty
         existing.name = line.name
+        existing.remark = line.remark
       } else if (line.qty > 0) {
         this.items.push({
           productId: line.productId,
           name: line.name,
           unit: line.unit,
           qty: line.qty,
+          remark: line.remark,
         })
       }
       this.items = this.items.filter((i) => i.qty > 0)

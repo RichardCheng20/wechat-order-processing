@@ -1,6 +1,6 @@
 import type { OrderInfo } from '../api/order'
 
-export type FlowPhase = 'pending' | 'current' | 'done' | 'cancelled'
+export type FlowPhase = 'pending' | 'current' | 'done' | 'cancelled' | 'danger'
 
 export type FlowStepKey = 'confirm' | 'pick' | 'price' | 'print' | 'pay'
 
@@ -37,7 +37,7 @@ export function isPaid(order: OrderInfo) {
   const outstanding = order.outstandingAmount ?? Math.max(amount - paid, 0)
   if (amount > 0 && outstanding <= 0) return true
   const label = order.paymentStatusLabel || ''
-  return label.includes('结清') || label.includes('已支付')
+  return label.includes('结清') || label.includes('已收款') || label.includes('已支付')
 }
 
 export function buildOrderFlowSteps(order: OrderInfo): OrderFlowStep[] {
@@ -46,8 +46,8 @@ export function buildOrderFlowSteps(order: OrderInfo): OrderFlowStep[] {
       { key: 'confirm', label: '已取消', phase: 'cancelled' },
       { key: 'pick', label: '分拣', phase: 'cancelled' },
       { key: 'price', label: '录价', phase: 'cancelled' },
-      { key: 'print', label: '打印', phase: 'cancelled' },
-      { key: 'pay', label: '支付', phase: 'cancelled' },
+      { key: 'print', label: '对账', phase: 'cancelled' },
+      { key: 'pay', label: '收款', phase: 'cancelled' },
     ]
   }
 
@@ -87,20 +87,20 @@ export function buildOrderFlowSteps(order: OrderInfo): OrderFlowStep[] {
 
   let printStep: OrderFlowStep
   if (printed) {
-    printStep = { key: 'print', label: '已打印', phase: 'done' }
+    printStep = { key: 'print', label: '已对账', phase: 'done' }
   } else if (priced) {
-    printStep = { key: 'print', label: '待打印', phase: 'current' }
+    printStep = { key: 'print', label: '待对账', phase: 'current' }
   } else {
-    printStep = { key: 'print', label: '待打印', phase: 'pending' }
+    printStep = { key: 'print', label: '待对账', phase: 'pending' }
   }
 
   let pay: OrderFlowStep
   if (paid) {
-    pay = { key: 'pay', label: '已支付', phase: 'done' }
+    pay = { key: 'pay', label: '已收款', phase: 'done' }
   } else if (priced) {
-    pay = { key: 'pay', label: '待支付', phase: 'current' }
+    pay = { key: 'pay', label: '待收款', phase: 'danger' }
   } else {
-    pay = { key: 'pay', label: '待支付', phase: 'pending' }
+    pay = { key: 'pay', label: '待收款', phase: 'pending' }
   }
 
   return [confirm, pick, price, printStep, pay]

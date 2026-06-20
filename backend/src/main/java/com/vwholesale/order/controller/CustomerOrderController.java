@@ -2,7 +2,9 @@ package com.vwholesale.order.controller;
 
 import com.vwholesale.common.response.ApiResponse;
 import com.vwholesale.order.dto.OrderCreateRequest;
+import com.vwholesale.order.dto.OrderNotifyResultVO;
 import com.vwholesale.order.dto.OrderVO;
+import com.vwholesale.order.service.OrderNotifyService;
 import com.vwholesale.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +26,7 @@ import java.util.List;
 public class CustomerOrderController {
 
     private final OrderService orderService;
+    private final OrderNotifyService orderNotifyService;
 
     @Operation(summary = "提交订单")
     @PostMapping("/orders")
@@ -41,5 +44,11 @@ public class CustomerOrderController {
     @GetMapping("/orders/{id}")
     public ApiResponse<OrderVO> detail(@PathVariable Long id) {
         return ApiResponse.ok(orderService.getDetail(id));
+    }
+
+    @Operation(summary = "微信提醒老板处理订单")
+    @PostMapping("/orders/{id}/notify-boss")
+    public ApiResponse<OrderNotifyResultVO> notifyBoss(@PathVariable Long id) {
+        return ApiResponse.ok(orderNotifyService.notifyBossByCustomer(id));
     }
 }

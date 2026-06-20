@@ -11,6 +11,16 @@
 
     <view v-if="showDevLogin" class="dev-section">
       <text class="dev-title">本地开发快捷登录（联调后端）</text>
+      <view class="dev-host-row">
+        <text class="dev-host-label">后端 IP</text>
+        <u-input
+          v-model="devApiHost"
+          class="dev-host-input"
+          placeholder="如 172.20.10.2"
+          @blur="saveDevApiHost"
+        />
+      </view>
+      <text class="dev-host-hint">当前：{{ apiBaseUrl }} · 换网络后改 IP 再登录</text>
       <u-button class="dev-btn" text="老板登录" @click="loginAsOwner" />
       <u-button class="dev-btn" text="合伙人登录" @click="loginAsPartner" />
       <u-button class="dev-btn" text="客户A（微信用户1）" @click="loginAsCustomerA" />
@@ -21,15 +31,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { useUserStore, type UserRole } from '../../stores/user'
-import { SHOW_DEV_LOGIN, USE_WECHAT_LOGIN } from '../../utils/config'
+import {
+  SHOW_DEV_LOGIN,
+  USE_WECHAT_LOGIN,
+  getApiBaseUrl,
+  getDevApiHostOverride,
+  setDevApiHostOverride,
+} from '../../utils/config'
 
 const userStore = useUserStore()
 const loading = ref(false)
 const showDevLogin = SHOW_DEV_LOGIN
+const devApiHost = ref('')
+const apiBaseUrl = computed(() => getApiBaseUrl())
+
+onShow(() => {
+  devApiHost.value = getDevApiHostOverride()
+})
+
+function saveDevApiHost() {
+  setDevApiHostOverride(devApiHost.value)
+}
 
 async function handleWechatLogin() {
+  saveDevApiHost()
   loading.value = true
   try {
     if (USE_WECHAT_LOGIN) {
@@ -49,6 +77,7 @@ async function handleWechatLogin() {
 }
 
 async function devAs(openid: string, nickname: string, role: UserRole) {
+  saveDevApiHost()
   loading.value = true
   try {
     await userStore.loginWithDev(openid, nickname, role)
@@ -118,9 +147,37 @@ function loginAsCustomerC() {
 
 .dev-title {
   display: block;
-  margin-bottom: 24rpx;
+  margin-bottom: 16rpx;
   font-size: 26rpx;
   color: #999;
+}
+
+.dev-host-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+  padding: 16rpx 20rpx;
+  background: #fff;
+  border-radius: 12rpx;
+}
+
+.dev-host-label {
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.dev-host-input {
+  flex: 1;
+}
+
+.dev-host-hint {
+  display: block;
+  margin-bottom: 20rpx;
+  font-size: 22rpx;
+  color: #bbb;
+  word-break: break-all;
 }
 
 .dev-btn {

@@ -5,6 +5,7 @@ import com.vwholesale.order.dto.BossDashboardVO;
 import com.vwholesale.order.dto.BossOrderCreateRequest;
 import com.vwholesale.order.dto.BossOrderUpdateRequest;
 import com.vwholesale.order.dto.OrderMarkPaymentRequest;
+import com.vwholesale.order.dto.OrderMarkPrintedRequest;
 import com.vwholesale.order.dto.OrderVO;
 import com.vwholesale.order.dto.UpdateOrderStatusRequest;
 import com.vwholesale.order.service.OrderService;
@@ -59,9 +60,10 @@ public class BossOrderController {
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo,
             @RequestParam(required = false) Long customerId,
-            @RequestParam(required = false) String paymentFilter) {
+            @RequestParam(required = false) String paymentFilter,
+            @RequestParam(required = false) Boolean receivableOnly) {
         return ApiResponse.ok(orderService.listForBoss(status, pricingPending, keyword, pickFilter,
-                dateType, dateFrom, dateTo, deliveryFrom, deliveryTo, customerId, paymentFilter));
+                dateType, dateFrom, dateTo, deliveryFrom, deliveryTo, customerId, paymentFilter, receivableOnly));
     }
 
     @Operation(summary = "销售开单")
@@ -88,13 +90,14 @@ public class BossOrderController {
         return ApiResponse.ok(orderService.confirmByBoss(id));
     }
 
-    @Operation(summary = "标记配送单已打印")
+    @Operation(summary = "标记配送单已对账")
     @PostMapping("/orders/{id}/print")
-    public ApiResponse<OrderVO> markPrinted(@PathVariable Long id) {
-        return ApiResponse.ok(orderService.markPrinted(id));
+    public ApiResponse<OrderVO> markPrinted(@PathVariable Long id,
+                                             @RequestBody(required = false) OrderMarkPrintedRequest request) {
+        return ApiResponse.ok(orderService.markPrinted(id, request));
     }
 
-    @Operation(summary = "标记订单支付")
+    @Operation(summary = "标记订单收款")
     @PostMapping("/orders/{id}/payment")
     public ApiResponse<OrderVO> markPayment(@PathVariable Long id, @Valid @RequestBody OrderMarkPaymentRequest request) {
         return ApiResponse.ok(orderService.markPaymentByBoss(id, request));

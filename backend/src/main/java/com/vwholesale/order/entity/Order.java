@@ -38,4 +38,5 @@ public class Order {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime printedAt;
+    private String statementImageUrl;
 }

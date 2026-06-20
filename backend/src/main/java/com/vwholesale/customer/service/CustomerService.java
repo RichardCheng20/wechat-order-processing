@@ -7,6 +7,7 @@ import com.vwholesale.common.context.MerchantContext;
 import com.vwholesale.common.enums.OrderStatus;
 import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
+import com.vwholesale.order.support.OrderReceivableRules;
 import com.vwholesale.customer.dto.CustomerBindRequest;
 import com.vwholesale.customer.dto.CustomerCreateRequest;
 import com.vwholesale.customer.dto.CustomerUpdateRequest;
@@ -234,22 +235,15 @@ public class CustomerService {
                 if (receivable != null) {
                     stats.totalSalesAmount = stats.totalSalesAmount.add(receivable);
                 }
-                BigDecimal outstanding = outstandingReceivable(order);
+            }
+            if (OrderReceivableRules.countsTowardCustomerDebt(order)) {
+                BigDecimal outstanding = OrderReceivableRules.outstandingReceivable(order);
                 if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
                     stats.outstandingAmount = stats.outstandingAmount.add(outstanding);
                 }
             }
         }
         return statsMap;
-    }
-
-    private BigDecimal outstandingReceivable(Order order) {
-        BigDecimal receivable = order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
-        if (receivable == null) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
-        return receivable.subtract(paid);
     }
 
     private static class CustomerOrderStats {

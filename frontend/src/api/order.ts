@@ -47,6 +47,8 @@ export interface OrderInfo {
   assignedWorkerId?: number
   assignedWorkerName?: string
   printed?: boolean
+  statementImageUrl?: string
+  customerOutstandingAmount?: number
 }
 
 export function createBossOrder(data: {
@@ -65,7 +67,7 @@ export function createBossOrder(data: {
 
 export function createCustomerOrder(data: {
   customerName?: string
-  items: { productId: number; orderQty: number; unit?: string }[]
+  items: { productId: number; orderQty: number; unit?: string; pickRemark?: string }[]
   remark?: string
 }) {
   return request<OrderInfo>({
@@ -89,6 +91,19 @@ export function fetchCustomerOrderDetail(id: number) {
   })
 }
 
+export interface OrderNotifyResult {
+  notified: number
+  failed: number
+  message: string
+}
+
+export function notifyBossOrder(orderId: number) {
+  return request<OrderNotifyResult>({
+    url: `/api/customer/orders/${orderId}/notify-boss`,
+    method: 'POST',
+  })
+}
+
 export function fetchBossOrderSummary() {
   return request<OrderSummary>({
     url: '/api/boss/orders/summary',
@@ -108,6 +123,7 @@ export function fetchBossOrders(options?: {
   dateTo?: string
   deliveryFrom?: string
   deliveryTo?: string
+  receivableOnly?: boolean
 }) {
   const useNewDate = options?.dateFrom && options?.dateTo
   return request<OrderInfo[]>({
@@ -127,6 +143,7 @@ export function fetchBossOrders(options?: {
       dateTo: useNewDate ? options?.dateTo : undefined,
       deliveryFrom: !useNewDate ? options?.deliveryFrom : undefined,
       deliveryTo: !useNewDate ? options?.deliveryTo : undefined,
+      receivableOnly: options?.receivableOnly ? 1 : undefined,
     },
   })
 }
@@ -166,10 +183,11 @@ export function updateBossOrderStatus(id: number, status: string) {
   })
 }
 
-export function markBossOrderPrinted(id: number) {
+export function markBossOrderPrinted(id: number, data?: { statementImageUrl?: string }) {
   return request<OrderInfo>({
     url: `/api/boss/orders/${id}/print`,
     method: 'POST',
+    data,
   })
 }
 
@@ -180,6 +198,7 @@ export function markBossOrderPayment(
     discount?: number
     method?: 'CASH' | 'WECHAT' | 'BANK_TRANSFER' | 'OTHER'
     remark?: string
+    statementImageUrl?: string
   },
 ) {
   return request<OrderInfo>({

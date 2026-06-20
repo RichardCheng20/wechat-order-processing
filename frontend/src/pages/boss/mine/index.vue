@@ -16,35 +16,7 @@
 
     <view class="section-card">
       <view class="section-head">
-        <text class="section-title">数据统计</text>
-        <text class="section-link" @tap="showComingSoon('详细报表')">查看更多 ›</text>
-      </view>
-      <view class="stats-row">
-        <view class="stat-box">
-          <text class="stat-label">今日销售</text>
-          <text class="stat-value sales">¥ {{ formatMoney(dashboard.todaySales) }}</text>
-        </view>
-        <view class="stat-divider" />
-        <view class="stat-box">
-          <text class="stat-label">今日利润</text>
-          <text class="stat-value">¥ {{ formatMoney(dashboard.todayProfit) }}</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="section-card">
-      <view class="section-head">
         <text class="section-title">快捷功能</text>
-      </view>
-      <view class="receivable-row">
-        <view class="receivable-item receivable" @tap="goUnsettledCustomers">
-          <text class="receivable-label">累计应收</text>
-          <text class="receivable-value">¥ {{ formatMoney(dashboard.totalReceivable) }}</text>
-        </view>
-        <view class="receivable-item payable">
-          <text class="receivable-label">累计应付</text>
-          <text class="receivable-value">¥ {{ formatMoney(dashboard.totalPayable) }}</text>
-        </view>
       </view>
 
       <view class="grid">
@@ -56,10 +28,6 @@
           <AppIcon class="grid-icon" name="category" tone="teal" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">分类管理</text>
         </view>
-        <view class="grid-item" @tap="showComingSoon('单位管理')">
-          <AppIcon class="grid-icon" name="unit" tone="pink" :size="28" :tile-size="88" :radius="22" />
-          <text class="grid-label">单位管理</text>
-        </view>
         <view class="grid-item" @tap="goCustomers">
           <AppIcon class="grid-icon" name="customer" tone="green" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">客户管理</text>
@@ -68,7 +36,7 @@
           <AppIcon class="grid-icon" name="supplier" tone="purple" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">供应商管理</text>
         </view>
-        <view class="grid-item" @tap="showComingSoon('报价单管理')">
+        <view class="grid-item" @tap="goQuotes">
           <AppIcon class="grid-icon" name="quote" tone="red" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">报价单管理</text>
         </view>
@@ -82,7 +50,7 @@
           v-for="item in dataPlatformItems"
           :key="item.label"
           class="grid-item"
-          @tap="showComingSoon(item.label)"
+          @tap="handleDataPlatformTap(item)"
         >
           <AppIcon class="grid-icon" :name="item.icon" :tone="item.color" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">{{ item.label }}</text>
@@ -112,19 +80,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchBossDashboard, type BossDashboard } from '../../../api/dashboard'
 import { fetchBossProfile, type BossProfile } from '../../../api/profile'
 import AppIcon from '../../../components/AppIcon.vue'
 import BossTabbar from '../../../components/boss-tabbar/index.vue'
 import { useUserStore } from '../../../stores/user'
 
 const userStore = useUserStore()
-const dashboard = ref<BossDashboard>({
-  todaySales: 0,
-  todayProfit: 0,
-  totalReceivable: 0,
-  totalPayable: 0,
-})
 const profile = ref<BossProfile>({
   merchantName: '',
   contactName: '',
@@ -137,20 +98,17 @@ const displaySub = computed(() => profile.value.merchantName || profile.value.re
 const avatarText = computed(() => (displayName.value || '店').slice(0, 1))
 
 const dataPlatformItems = [
-  { label: '客户报表', icon: 'report', color: 'green' as const },
-  { label: '客户排行', icon: 'ranking', color: 'purple' as const },
-  { label: '商品排行', icon: 'product', color: 'red' as const },
+  { label: '销售数据', icon: 'salesPayment', color: 'teal' as const, path: '/pages/boss/sales-data/index' },
+  { label: '客户报表', icon: 'report', color: 'green' as const, path: '/pages/boss/customer-report/index' },
+  { label: '客户排行', icon: 'ranking', color: 'purple' as const, path: '/pages/boss/ranking/customers/index' },
+  { label: '商品排行', icon: 'product', color: 'red' as const, path: '/pages/boss/ranking/products/index' },
   { label: '供应商报表', icon: 'supplier', color: 'orange' as const },
   { label: '库存报表', icon: 'inventory', color: 'blue' as const },
 ]
 
 const commonItems = [
-  { label: '订货邀请', icon: 'invite', color: 'green' as const, action: 'invite' },
   { label: '同事管理', icon: 'colleague', color: 'blue' as const, action: 'colleague' },
   { label: '设置', icon: 'settings', color: 'orange' as const, action: 'settings' },
-  { label: '帮助中心', icon: 'help', color: 'red' as const, action: 'help' },
-  { label: '消息通知', icon: 'message', color: 'orange' as const, action: 'messages' },
-  { label: '退出登录', icon: 'logout', color: 'gray' as const, action: 'logout' },
 ]
 
 onShow(async () => {
@@ -159,18 +117,11 @@ onShow(async () => {
     return
   }
   try {
-    const [dash, prof] = await Promise.all([fetchBossDashboard(), fetchBossProfile()])
-    dashboard.value = dash
-    profile.value = prof
+    profile.value = await fetchBossProfile()
   } catch {
     // 保留默认值
   }
 })
-
-function formatMoney(value?: number) {
-  const num = Number(value || 0)
-  return num.toFixed(2)
-}
 
 function goProfile() {
   uni.navigateTo({ url: '/pages/boss/profile/index' })
@@ -188,28 +139,30 @@ function goCustomers() {
   uni.navigateTo({ url: '/pages/boss/customers/index' })
 }
 
-function goUnsettledCustomers() {
-  uni.navigateTo({ url: '/pages/boss/customers/index?tab=unsettled' })
-}
-
 function goSuppliers() {
   uni.navigateTo({ url: '/pages/boss/suppliers/index' })
+}
+
+function goQuotes() {
+  uni.navigateTo({ url: '/pages/boss/quotes/index' })
 }
 
 function showComingSoon(name: string) {
   uni.showToast({ title: `${name}即将上线`, icon: 'none' })
 }
 
+function handleDataPlatformTap(item: { label: string; path?: string }) {
+  if (item.path) {
+    uni.navigateTo({ url: item.path })
+    return
+  }
+  showComingSoon(item.label)
+}
+
 function handleCommonTap(item: { label: string; action: string }) {
   switch (item.action) {
     case 'settings':
       uni.navigateTo({ url: '/pages/boss/settings/index' })
-      break
-    case 'messages':
-      uni.navigateTo({ url: '/pages/boss/messages/index' })
-      break
-    case 'logout':
-      userStore.signOut()
       break
     default:
       showComingSoon(item.label)
@@ -352,6 +305,17 @@ function handleCommonTap(item: { label: string; action: string }) {
   color: #0b7f3a;
 }
 
+.stat-value.profit {
+  color: #17211b;
+}
+
+.stats-hint {
+  display: block;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
 .stat-divider {
   width: 1rpx;
   height: 72rpx;
@@ -362,7 +326,15 @@ function handleCommonTap(item: { label: string; action: string }) {
 .receivable-row {
   display: flex;
   gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.receivable-row.single {
   margin-bottom: 28rpx;
+}
+
+.receivable-row.single .receivable-item {
+  flex: 1;
 }
 
 .receivable-item {
@@ -377,6 +349,10 @@ function handleCommonTap(item: { label: string; action: string }) {
 
 .receivable-item.receivable {
   background: #fff0ee;
+}
+
+.receivable-item.received {
+  background: #ecfdf3;
 }
 
 .receivable-item.payable {
@@ -394,7 +370,14 @@ function handleCommonTap(item: { label: string; action: string }) {
   margin-top: 8rpx;
   font-size: 34rpx;
   font-weight: 700;
+}
+
+.receivable-value.debt {
   color: #e74c3c;
+}
+
+.receivable-value.income {
+  color: #16a34a;
 }
 
 .grid {

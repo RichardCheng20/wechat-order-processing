@@ -18,4 +18,6 @@ public class OrderMarkPaymentRequest {
     private String method;
 
     private String remark;
+
+    private String statementImageUrl;
 }

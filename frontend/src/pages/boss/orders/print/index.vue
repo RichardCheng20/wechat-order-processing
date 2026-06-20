@@ -44,7 +44,7 @@
       </scroll-view>
 
       <view class="footer boss-bottom-bar">
-        <view class="boss-primary-btn" @tap="handleConfirmPrint">确认打印</view>
+        <view class="boss-primary-btn" @tap="handleConfirmPrint">确认发送</view>
         <view class="boss-secondary-btn" @tap="handleShareImage">分享图片</view>
       </view>
     </template>
@@ -62,6 +62,7 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { fetchBossOrderDetail, markBossOrderPrinted } from '../../../../api/order'
+import { uploadPaymentVoucher } from '../../../../api/payment'
 import {
   buildDeliveryNote,
   DELIVERY_NOTE_CANVAS,
@@ -120,22 +121,23 @@ async function createImage() {
 
 async function handleConfirmPrint() {
   if (!note.value) return
-  uni.showLoading({ title: '生成中' })
+  uni.showLoading({ title: '发送中' })
   try {
     const filePath = await createImage()
     if (!filePath) return
-    await markBossOrderPrinted(orderId.value)
+    const statementImageUrl = await uploadPaymentVoucher(filePath)
+    await markBossOrderPrinted(orderId.value, { statementImageUrl })
     uni.hideLoading()
     uni.showModal({
-      title: '打印成功',
-      content: '配送单已标记为已打印，图片已生成，可保存到相册或转发给司机。',
+      title: '发送成功',
+      content: '配送单将标记为已对账，请将订单图片发送给对应客户，客户侧将会看到订单的金额；',
       confirmText: '保存图片',
       cancelText: '知道了',
       success: async (res) => {
         if (res.confirm) {
           try {
             await saveDeliveryNoteImage(filePath)
-            uni.showToast({ title: '已保存到相册', icon: 'success' })
+            uni.showToast({ title: '已保存到手机相册', icon: 'success' })
           } catch (err) {
             previewDeliveryNoteImage(filePath)
           }
@@ -144,7 +146,7 @@ async function handleConfirmPrint() {
     })
   } catch (err) {
     uni.hideLoading()
-    uni.showToast({ title: err instanceof Error ? err.message : '打印失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '发送失败', icon: 'none' })
   }
 }
 

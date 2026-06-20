@@ -10,7 +10,15 @@ import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
+import com.vwholesale.order.dto.BossCustomerRankingVO;
+import com.vwholesale.order.dto.BossCustomerReportVO;
 import com.vwholesale.order.dto.BossDashboardVO;
+import com.vwholesale.order.dto.CustomerReportRow;
+import com.vwholesale.order.dto.CustomerReportSummary;
+import com.vwholesale.order.dto.BossProductRankingVO;
+import com.vwholesale.order.dto.BossRevenueStatsVO;
+import com.vwholesale.order.dto.CustomerRankingRow;
+import com.vwholesale.order.dto.ProductRankingRow;
 import com.vwholesale.order.dto.BossOrderCreateRequest;
 import com.vwholesale.order.dto.BossOrderItemCreateRequest;
 import com.vwholesale.order.dto.BossOrderUpdateRequest;
@@ -18,16 +26,22 @@ import com.vwholesale.order.dto.OrderCreateRequest;
 import com.vwholesale.order.dto.OrderItemCreateRequest;
 import com.vwholesale.order.dto.OrderItemVO;
 import com.vwholesale.order.dto.OrderMarkPaymentRequest;
+import com.vwholesale.order.dto.OrderMarkPrintedRequest;
 import com.vwholesale.order.dto.OrderVO;
+import com.vwholesale.order.dto.RevenueDailyRow;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.support.OrderReceivableRules;
 import com.vwholesale.payment.entity.Payment;
 import com.vwholesale.payment.mapper.PaymentMapper;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
+import com.vwholesale.product.service.ProductPurchasePriceService;
 import com.vwholesale.product.service.ProductService;
+import com.vwholesale.supplier.entity.Supplier;
+import com.vwholesale.supplier.mapper.SupplierMapper;
 import com.vwholesale.worker.entity.Worker;
 import com.vwholesale.worker.mapper.WorkerMapper;
 import lombok.RequiredArgsConstructor;
@@ -59,8 +73,10 @@ public class OrderService {
     private final OrderItemMapper orderItemMapper;
     private final CustomerMapper customerMapper;
     private final ProductMapper productMapper;
+    private final ProductPurchasePriceService productPurchasePriceService;
     private final WorkerMapper workerMapper;
     private final PaymentMapper paymentMapper;
+    private final SupplierMapper supplierMapper;
     private final MerchantContext merchantContext;
 
     @Transactional
@@ -111,6 +127,9 @@ public class OrderService {
             item.setProductId(product.getId());
             item.setOrderQty(itemReq.getOrderQty());
             item.setUnit(resolveCustomerItemUnit(product, itemReq.getUnit()));
+            if (StringUtils.hasText(itemReq.getPickRemark())) {
+                item.setPickRemark(itemReq.getPickRemark().trim());
+            }
             item.setShortageFlag(0);
             orderItemMapper.insert(item);
         }
@@ -299,7 +318,7 @@ public class OrderService {
                                      String pickFilter, String dateType,
                                      LocalDate dateFrom, LocalDate dateTo,
                                      LocalDate deliveryFrom, LocalDate deliveryTo,
-                                     Long customerId, String paymentFilter) {
+                                     Long customerId, String paymentFilter, Boolean receivableOnly) {
         RoleChecker.requireBoss();
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
@@ -335,6 +354,12 @@ public class OrderService {
         if (StringUtils.hasText(paymentFilter) && !"ALL".equalsIgnoreCase(paymentFilter.trim())) {
             orders = orders.stream()
                     .filter(vo -> matchesPaymentFilter(vo, paymentFilter.trim()))
+                    .toList();
+        }
+        if (Boolean.TRUE.equals(receivableOnly)) {
+            orders = orders.stream()
+                    .filter(vo -> Boolean.TRUE.equals(vo.getPrinted())
+                            || OrderStatus.COMPLETED.equals(vo.getStatus()))
                     .toList();
         }
         if (!StringUtils.hasText(pickFilter) || "ALL".equalsIgnoreCase(pickFilter)) {
@@ -435,13 +460,19 @@ public class OrderService {
     );
 
     @Transactional
-    public OrderVO markPrinted(Long id) {
+    public OrderVO markPrinted(Long id, OrderMarkPrintedRequest request) {
         RoleChecker.requireBoss();
         Order order = getOrderOrThrow(id);
         if (OrderStatus.CANCELLED.equals(order.getStatus())) {
-            throw BusinessException.of(400, "已取消订单不可打印");
+            throw BusinessException.of(400, "已取消订单不可发送对账单");
         }
         order.setPrintedAt(LocalDateTime.now());
+        if (order.getReceivableAmount() == null && order.getAmount() != null) {
+            order.setReceivableAmount(order.getAmount());
+        }
+        if (request != null && StringUtils.hasText(request.getStatementImageUrl())) {
+            order.setStatementImageUrl(request.getStatementImageUrl().trim());
+        }
         orderMapper.updateById(order);
         return getDetail(id);
     }
@@ -487,7 +518,7 @@ public class OrderService {
             throw BusinessException.of(400, "散客订单请先关联客户");
         }
         if (order.getAmount() == null) {
-            throw BusinessException.of(400, "订单尚未录价，无法标记支付");
+            throw BusinessException.of(400, "订单尚未录价，无法标记收款");
         }
 
         BigDecimal discount = request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO;
@@ -512,6 +543,9 @@ public class OrderService {
         }
 
         order.setPaidAmount(paid.add(amount));
+        if (request != null && StringUtils.hasText(request.getStatementImageUrl())) {
+            order.setStatementImageUrl(request.getStatementImageUrl().trim());
+        }
         orderMapper.updateById(order);
 
         String method = StringUtils.hasText(request.getMethod()) ? request.getMethod().trim().toUpperCase() : "WECHAT";
@@ -577,30 +611,473 @@ public class OrderService {
         Long merchantId = merchantContext.currentMerchantId();
         LocalDate today = LocalDate.now();
 
-        List<Order> todayOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+        List<Order> activeOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantId)
-                .eq(Order::getDeliveryDate, today));
+                .ne(Order::getStatus, OrderStatus.CANCELLED));
 
-        BigDecimal todaySales = todayOrders.stream()
-                .filter(o -> OrderStatus.COMPLETED.equals(o.getStatus()) && o.getAmount() != null)
-                .map(Order::getAmount)
+        List<Order> receivableOrders = activeOrders.stream()
+                .filter(OrderReceivableRules::countsTowardCustomerDebt)
+                .toList();
+
+        BigDecimal totalReceivable = receivableOrders.stream()
+                .map(OrderReceivableRules::outstandingReceivable)
+                .filter(v -> v.compareTo(BigDecimal.ZERO) > 0)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        List<Order> completedOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getMerchantId, merchantId)
-                .eq(Order::getStatus, OrderStatus.COMPLETED));
+        BigDecimal totalReceived = receivableOrders.stream()
+                .map(o -> o.getPaidAmount() != null ? o.getPaidAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalReceivable = completedOrders.stream()
-                .map(this::outstandingReceivable)
-                .filter(v -> v.compareTo(BigDecimal.ZERO) > 0)
+        List<Order> todaySalesOrders = activeOrders.stream()
+                .filter(o -> today.equals(o.getDeliveryDate()))
+                .filter(o -> o.getPrintedAt() != null || OrderStatus.COMPLETED.equals(o.getStatus()))
+                .filter(o -> o.getAmount() != null)
+                .toList();
+
+        BigDecimal todaySales = todaySalesOrders.stream()
+                .map(o -> o.getReceivableAmount() != null ? o.getReceivableAmount() : o.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal todayPurchaseCost = computePurchaseCost(todaySalesOrders, today);
+        BigDecimal todayProfit = todaySales.subtract(todayPurchaseCost);
+
+        List<Supplier> suppliers = supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .eq(Supplier::getMerchantId, merchantId));
+        BigDecimal totalPayable = suppliers.stream()
+                .map(s -> {
+                    BigDecimal payable = s.getPayableAmount() != null ? s.getPayableAmount() : BigDecimal.ZERO;
+                    BigDecimal paid = s.getPaidAmount() != null ? s.getPaidAmount() : BigDecimal.ZERO;
+                    BigDecimal outstanding = payable.subtract(paid);
+                    return outstanding.compareTo(BigDecimal.ZERO) > 0 ? outstanding : BigDecimal.ZERO;
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return BossDashboardVO.builder()
                 .todaySales(todaySales)
-                .todayProfit(BigDecimal.ZERO)
+                .todayProfit(todayProfit)
+                .todayPurchaseCost(todayPurchaseCost)
                 .totalReceivable(totalReceivable)
-                .totalPayable(BigDecimal.ZERO)
+                .totalReceived(totalReceived)
+                .totalPayable(totalPayable)
                 .build();
+    }
+
+    public BossRevenueStatsVO revenueStats(LocalDate dateFrom, LocalDate dateTo, String dateType) {
+        RoleChecker.requireBoss();
+        validateStatsDateRange(dateFrom, dateTo);
+        boolean byOrderDate = resolveStatsByOrderDate(dateType);
+        List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
+
+        Map<LocalDate, List<Order>> grouped = orders.stream()
+                .collect(Collectors.groupingBy(o -> resolveStatsDate(o, byOrderDate)));
+
+        List<RevenueDailyRow> rows = new ArrayList<>();
+        BigDecimal totalSales = BigDecimal.ZERO;
+        BigDecimal totalPurchaseCost = BigDecimal.ZERO;
+
+        for (LocalDate day = dateFrom; !day.isAfter(dateTo); day = day.plusDays(1)) {
+            List<Order> dayOrders = grouped.getOrDefault(day, List.of());
+            BigDecimal sales = dayOrders.stream()
+                    .map(o -> o.getReceivableAmount() != null ? o.getReceivableAmount() : o.getAmount())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal purchaseCost = computePurchaseCost(dayOrders, day);
+            BigDecimal profit = sales.subtract(purchaseCost);
+            rows.add(RevenueDailyRow.builder()
+                    .date(day)
+                    .salesAmount(sales)
+                    .purchaseCost(purchaseCost)
+                    .profit(profit)
+                    .build());
+            totalSales = totalSales.add(sales);
+            totalPurchaseCost = totalPurchaseCost.add(purchaseCost);
+        }
+
+        return BossRevenueStatsVO.builder()
+                .totalSales(totalSales)
+                .totalPurchaseCost(totalPurchaseCost)
+                .totalProfit(totalSales.subtract(totalPurchaseCost))
+                .rows(rows)
+                .build();
+    }
+
+    public BossCustomerRankingVO customerRanking(LocalDate dateFrom, LocalDate dateTo, String dateType) {
+        RoleChecker.requireBoss();
+        validateStatsDateRange(dateFrom, dateTo);
+        boolean byOrderDate = resolveStatsByOrderDate(dateType);
+        List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
+
+        Map<String, CustomerAgg> aggMap = new HashMap<>();
+        for (Order order : orders) {
+            String key;
+            if (order.getCustomerId() != null) {
+                key = "c:" + order.getCustomerId();
+            } else {
+                String guestName = StringUtils.hasText(order.getGuestCustomerName())
+                        ? order.getGuestCustomerName().trim()
+                        : "散客";
+                key = "g:" + guestName;
+            }
+            CustomerAgg agg = aggMap.computeIfAbsent(key, k -> new CustomerAgg());
+            if (order.getCustomerId() != null) {
+                agg.customerId = order.getCustomerId();
+            } else if (agg.guestName == null) {
+                agg.guestName = key.startsWith("g:") ? key.substring(2) : "散客";
+            }
+            BigDecimal sales = orderSalesAmount(order);
+            BigDecimal cost = computePurchaseCost(List.of(order), resolveStatsDate(order, byOrderDate));
+            agg.sales = agg.sales.add(sales);
+            agg.cost = agg.cost.add(cost);
+        }
+
+        Set<Long> customerIds = aggMap.values().stream()
+                .map(a -> a.customerId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Customer> customerMap = customerIds.isEmpty()
+                ? Map.of()
+                : customerMapper.selectBatchIds(customerIds).stream()
+                        .collect(Collectors.toMap(Customer::getId, c -> c));
+
+        List<CustomerRankingRow> rows = aggMap.values().stream()
+                .map(agg -> {
+                    String name = agg.customerId != null
+                            ? customerMap.getOrDefault(agg.customerId, new Customer()).getName()
+                            : agg.guestName;
+                    if (!StringUtils.hasText(name)) {
+                        name = agg.guestName != null ? agg.guestName : "未知客户";
+                    }
+                    return CustomerRankingRow.builder()
+                            .customerId(agg.customerId)
+                            .customerName(name)
+                            .salesAmount(agg.sales)
+                            .purchaseCost(agg.cost)
+                            .profit(agg.sales.subtract(agg.cost))
+                            .build();
+                })
+                .sorted((a, b) -> b.getSalesAmount().compareTo(a.getSalesAmount()))
+                .toList();
+
+        assignCustomerRanks(rows);
+        return BossCustomerRankingVO.builder().rows(rows).build();
+    }
+
+    public BossCustomerReportVO customerReport(LocalDate dateFrom, LocalDate dateTo, String dateType) {
+        RoleChecker.requireBoss();
+        validateStatsDateRange(dateFrom, dateTo);
+        boolean byOrderDate = resolveStatsByOrderDate(dateType);
+        List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
+
+        Map<String, ReportAgg> aggMap = new HashMap<>();
+        BigDecimal totalReceivable = BigDecimal.ZERO;
+        BigDecimal totalReceived = BigDecimal.ZERO;
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        BigDecimal totalOutstanding = BigDecimal.ZERO;
+
+        for (Order order : orders) {
+            BigDecimal receivable = orderReceivableAmount(order);
+            BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
+            BigDecimal discount = orderDiscount(order);
+            BigDecimal outstanding = receivable.subtract(paid);
+            if (outstanding.compareTo(BigDecimal.ZERO) < 0) {
+                outstanding = BigDecimal.ZERO;
+            }
+
+            totalReceivable = totalReceivable.add(receivable);
+            totalReceived = totalReceived.add(paid);
+            totalDiscount = totalDiscount.add(discount);
+            totalOutstanding = totalOutstanding.add(outstanding);
+
+            String key = reportCustomerKey(order);
+            ReportAgg agg = aggMap.computeIfAbsent(key, k -> new ReportAgg());
+            if (order.getCustomerId() != null) {
+                agg.customerId = order.getCustomerId();
+            } else if (agg.guestName == null) {
+                agg.guestName = resolveGuestName(order);
+            }
+            agg.receivable = agg.receivable.add(receivable);
+            agg.received = agg.received.add(paid);
+        }
+
+        Set<Long> customerIds = aggMap.values().stream()
+                .map(a -> a.customerId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Customer> customerMap = customerIds.isEmpty()
+                ? Map.of()
+                : customerMapper.selectBatchIds(customerIds).stream()
+                        .collect(Collectors.toMap(Customer::getId, c -> c));
+
+        List<CustomerReportRow> rows = aggMap.values().stream()
+                .map(agg -> {
+                    String name = agg.customerId != null
+                            ? customerMap.getOrDefault(agg.customerId, new Customer()).getName()
+                            : agg.guestName;
+                    if (!StringUtils.hasText(name)) {
+                        name = agg.guestName != null ? agg.guestName : "未知客户";
+                    }
+                    return CustomerReportRow.builder()
+                            .customerId(agg.customerId)
+                            .customerName(name)
+                            .receivableAmount(agg.receivable)
+                            .receivedAmount(agg.received)
+                            .build();
+                })
+                .sorted((a, b) -> b.getReceivableAmount().compareTo(a.getReceivableAmount()))
+                .toList();
+
+        CustomerReportSummary summary = CustomerReportSummary.builder()
+                .receivableAmount(totalReceivable)
+                .receivedAmount(totalReceived)
+                .discountAmount(totalDiscount)
+                .outstandingAmount(totalOutstanding)
+                .refundAmount(BigDecimal.ZERO)
+                .build();
+
+        return BossCustomerReportVO.builder()
+                .summary(summary)
+                .rows(rows)
+                .build();
+    }
+
+    private String reportCustomerKey(Order order) {
+        if (order.getCustomerId() != null) {
+            return "c:" + order.getCustomerId();
+        }
+        return "g:" + resolveGuestName(order);
+    }
+
+    private String resolveGuestName(Order order) {
+        return StringUtils.hasText(order.getGuestCustomerName())
+                ? order.getGuestCustomerName().trim()
+                : "散客";
+    }
+
+    private BigDecimal orderReceivableAmount(Order order) {
+        if (order.getReceivableAmount() != null) {
+            return order.getReceivableAmount();
+        }
+        return order.getAmount() != null ? order.getAmount() : BigDecimal.ZERO;
+    }
+
+    private BigDecimal orderDiscount(Order order) {
+        if (order.getAmount() == null || order.getReceivableAmount() == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal diff = order.getAmount().subtract(order.getReceivableAmount());
+        return diff.compareTo(BigDecimal.ZERO) > 0 ? diff : BigDecimal.ZERO;
+    }
+
+    private static class ReportAgg {
+        private Long customerId;
+        private String guestName;
+        private BigDecimal receivable = BigDecimal.ZERO;
+        private BigDecimal received = BigDecimal.ZERO;
+    }
+
+    public BossProductRankingVO productRanking(LocalDate dateFrom, LocalDate dateTo, String dateType) {
+        RoleChecker.requireBoss();
+        validateStatsDateRange(dateFrom, dateTo);
+        boolean byOrderDate = resolveStatsByOrderDate(dateType);
+        List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
+        if (orders.isEmpty()) {
+            return BossProductRankingVO.builder().rows(List.of()).build();
+        }
+
+        Map<Long, Order> orderMap = orders.stream().collect(Collectors.toMap(Order::getId, o -> o));
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds));
+        if (items.isEmpty()) {
+            return BossProductRankingVO.builder().rows(List.of()).build();
+        }
+
+        Set<Long> productIds = items.stream().map(OrderItem::getProductId).collect(Collectors.toSet());
+        Map<Long, Product> productMap = productMapper.selectBatchIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Map<Long, ProductAgg> aggMap = new HashMap<>();
+        Map<Long, List<OrderItem>> itemsByOrder = items.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+
+        for (Order order : orders) {
+            List<OrderItem> orderItems = itemsByOrder.getOrDefault(order.getId(), List.of());
+            if (orderItems.isEmpty()) {
+                continue;
+            }
+            LocalDate priceDate = resolveStatsDate(order, byOrderDate);
+            Map<Long, BigDecimal> defaultPrices = orderItems.stream()
+                    .map(OrderItem::getProductId)
+                    .distinct()
+                    .collect(Collectors.toMap(id -> id, id -> {
+                        Product p = productMap.get(id);
+                        return p != null && p.getDefaultPurchasePrice() != null
+                                ? p.getDefaultPurchasePrice()
+                                : BigDecimal.ZERO;
+                    }));
+            Map<Long, BigDecimal> purchasePrices = productPurchasePriceService.batchResolvePurchasePrices(
+                    defaultPrices.keySet().stream().toList(), priceDate, defaultPrices);
+
+            for (OrderItem item : orderItems) {
+                ProductAgg agg = aggMap.computeIfAbsent(item.getProductId(), id -> new ProductAgg());
+                agg.productId = item.getProductId();
+                BigDecimal qty = item.getActualQty() != null ? item.getActualQty() : item.getOrderQty();
+                BigDecimal sales = itemSalesAmount(item);
+                agg.sales = agg.sales.add(sales);
+                if (qty != null) {
+                    BigDecimal unitCost = purchasePrices.get(item.getProductId());
+                    if (unitCost != null) {
+                        agg.cost = agg.cost.add(unitCost.multiply(qty));
+                    }
+                }
+            }
+        }
+
+        List<ProductRankingRow> rows = aggMap.values().stream()
+                .map(agg -> {
+                    Product product = productMap.get(agg.productId);
+                    String name = product != null ? product.getName() : "未知商品";
+                    return ProductRankingRow.builder()
+                            .productId(agg.productId)
+                            .productName(name)
+                            .salesAmount(agg.sales)
+                            .purchaseCost(agg.cost)
+                            .profit(agg.sales.subtract(agg.cost))
+                            .build();
+                })
+                .sorted((a, b) -> b.getSalesAmount().compareTo(a.getSalesAmount()))
+                .toList();
+
+        assignProductRanks(rows);
+        return BossProductRankingVO.builder().rows(rows).build();
+    }
+
+    private void validateStatsDateRange(LocalDate dateFrom, LocalDate dateTo) {
+        if (dateFrom == null || dateTo == null) {
+            throw BusinessException.of(400, "请选择日期范围");
+        }
+        if (dateFrom.isAfter(dateTo)) {
+            throw BusinessException.of(400, "开始日期不能晚于结束日期");
+        }
+    }
+
+    private boolean resolveStatsByOrderDate(String dateType) {
+        return "ORDER".equalsIgnoreCase(dateType != null ? dateType.trim() : "DELIVERY");
+    }
+
+    private List<Order> loadSalesOrdersInRange(LocalDate dateFrom, LocalDate dateTo, boolean byOrderDate) {
+        Long merchantId = merchantContext.currentMerchantId();
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantId)
+                .ne(Order::getStatus, OrderStatus.CANCELLED);
+        if (byOrderDate) {
+            wrapper.ge(Order::getCreatedAt, dateFrom.atStartOfDay())
+                    .lt(Order::getCreatedAt, dateTo.plusDays(1).atStartOfDay());
+        } else {
+            wrapper.ge(Order::getDeliveryDate, dateFrom)
+                    .le(Order::getDeliveryDate, dateTo);
+        }
+        return orderMapper.selectList(wrapper).stream()
+                .filter(this::isSalesStatsOrder)
+                .toList();
+    }
+
+    private BigDecimal orderSalesAmount(Order order) {
+        if (order.getReceivableAmount() != null) {
+            return order.getReceivableAmount();
+        }
+        return order.getAmount() != null ? order.getAmount() : BigDecimal.ZERO;
+    }
+
+    private BigDecimal itemSalesAmount(OrderItem item) {
+        if (item.getSubtotalAmount() != null) {
+            return item.getSubtotalAmount();
+        }
+        BigDecimal qty = item.getActualQty() != null ? item.getActualQty() : item.getOrderQty();
+        if (qty == null || item.getDealPrice() == null) {
+            return BigDecimal.ZERO;
+        }
+        return item.getDealPrice().multiply(qty);
+    }
+
+    private void assignCustomerRanks(List<CustomerRankingRow> rows) {
+        int rank = 1;
+        for (CustomerRankingRow row : rows) {
+            row.setRank(rank++);
+        }
+    }
+
+    private void assignProductRanks(List<ProductRankingRow> rows) {
+        int rank = 1;
+        for (ProductRankingRow row : rows) {
+            row.setRank(rank++);
+        }
+    }
+
+    private static class CustomerAgg {
+        private Long customerId;
+        private String guestName;
+        private BigDecimal sales = BigDecimal.ZERO;
+        private BigDecimal cost = BigDecimal.ZERO;
+    }
+
+    private static class ProductAgg {
+        private Long productId;
+        private BigDecimal sales = BigDecimal.ZERO;
+        private BigDecimal cost = BigDecimal.ZERO;
+    }
+
+    private boolean isSalesStatsOrder(Order order) {
+        if (order.getAmount() == null) {
+            return false;
+        }
+        return order.getPrintedAt() != null || OrderStatus.COMPLETED.equals(order.getStatus());
+    }
+
+    private LocalDate resolveStatsDate(Order order, boolean byOrderDate) {
+        if (byOrderDate) {
+            if (order.getCreatedAt() != null) {
+                return order.getCreatedAt().toLocalDate();
+            }
+            return order.getDeliveryDate();
+        }
+        if (order.getDeliveryDate() != null) {
+            return order.getDeliveryDate();
+        }
+        return order.getCreatedAt() != null ? order.getCreatedAt().toLocalDate() : LocalDate.now();
+    }
+
+    private BigDecimal computePurchaseCost(List<Order> orders, LocalDate date) {
+        if (orders.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds));
+        if (items.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        Set<Long> productIds = items.stream().map(OrderItem::getProductId).collect(Collectors.toSet());
+        Map<Long, Product> productMap = productMapper.selectBatchIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Long, BigDecimal> defaultPrices = productMap.values().stream()
+                .collect(Collectors.toMap(Product::getId,
+                        p -> p.getDefaultPurchasePrice() != null ? p.getDefaultPurchasePrice() : BigDecimal.ZERO));
+        Map<Long, BigDecimal> purchasePrices = productPurchasePriceService.batchResolvePurchasePrices(
+                productIds.stream().toList(), date, defaultPrices);
+
+        BigDecimal cost = BigDecimal.ZERO;
+        for (OrderItem item : items) {
+            BigDecimal qty = item.getActualQty() != null ? item.getActualQty() : item.getOrderQty();
+            if (qty == null) {
+                continue;
+            }
+            BigDecimal unitCost = purchasePrices.get(item.getProductId());
+            if (unitCost == null) {
+                continue;
+            }
+            cost = cost.add(unitCost.multiply(qty));
+        }
+        return cost;
     }
 
     private BigDecimal outstandingReceivable(Order order) {
@@ -639,15 +1116,43 @@ public class OrderService {
                 ? Map.of()
                 : workerMapper.selectBatchIds(workerIds).stream().collect(Collectors.toMap(Worker::getId, Worker::getName));
 
+        Long merchantId = merchantContext.currentMerchantId();
+        Map<Long, BigDecimal> customerOutstanding = loadCustomerOutstandingMap(merchantId);
+
         return orders.stream()
-                .map(order -> toListVO(order, resolveCustomerName(order, customerNames),
-                        itemCounts.getOrDefault(order.getId(), 0L).intValue(),
-                        pickedCounts.getOrDefault(order.getId(), 0L).intValue(),
-                        priceIncompleteMap.getOrDefault(order.getId(), true),
-                        order.getAssignedWorkerId() != null
-                                ? workerNames.get(order.getAssignedWorkerId())
-                                : null))
+                .map(order -> {
+                    OrderVO vo = toListVO(order, resolveCustomerName(order, customerNames),
+                            itemCounts.getOrDefault(order.getId(), 0L).intValue(),
+                            pickedCounts.getOrDefault(order.getId(), 0L).intValue(),
+                            priceIncompleteMap.getOrDefault(order.getId(), true),
+                            order.getAssignedWorkerId() != null
+                                    ? workerNames.get(order.getAssignedWorkerId())
+                                    : null);
+                    if (order.getCustomerId() != null) {
+                        vo.setCustomerOutstandingAmount(
+                                customerOutstanding.getOrDefault(order.getCustomerId(), BigDecimal.ZERO));
+                    }
+                    return vo;
+                })
                 .toList();
+    }
+
+    private Map<Long, BigDecimal> loadCustomerOutstandingMap(Long merchantId) {
+        List<Order> allOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantId)
+                .isNotNull(Order::getCustomerId)
+                .ne(Order::getStatus, OrderStatus.CANCELLED));
+        Map<Long, BigDecimal> map = new HashMap<>();
+        for (Order order : allOrders) {
+            if (!OrderReceivableRules.countsTowardCustomerDebt(order)) {
+                continue;
+            }
+            BigDecimal outstanding = OrderReceivableRules.outstandingReceivable(order);
+            if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
+                map.merge(order.getCustomerId(), outstanding, BigDecimal::add);
+            }
+        }
+        return map;
     }
 
     private String resolveCustomerName(Order order, Map<Long, String> customerNames) {
@@ -740,6 +1245,7 @@ public class OrderService {
                 .itemCount(itemVOs.size())
                 .pickedItemCount(pickedItemCount)
                 .printed(order.getPrintedAt() != null)
+                .statementImageUrl(order.getStatementImageUrl())
                 .build();
     }
 
@@ -770,6 +1276,7 @@ public class OrderService {
                 .assignedWorkerId(order.getAssignedWorkerId())
                 .assignedWorkerName(workerName)
                 .printed(order.getPrintedAt() != null)
+                .statementImageUrl(order.getStatementImageUrl())
                 .build();
     }
 
@@ -791,16 +1298,16 @@ public class OrderService {
     private String paymentStatusLabel(Order order) {
         BigDecimal receivable = receivableAmount(order);
         if (receivable == null) {
-            return "未支付";
+            return "待收款";
         }
         BigDecimal paid = order.getPaidAmount() != null ? order.getPaidAmount() : BigDecimal.ZERO;
         if (paid.compareTo(receivable) >= 0) {
-            return "已支付";
+            return "已收款";
         }
         if (paid.compareTo(BigDecimal.ZERO) > 0) {
-            return "部分支付";
+            return "部分收款";
         }
-        return "未支付";
+        return "待收款";
     }
 
     private BigDecimal receivableAmount(Order order) {
@@ -929,9 +1436,14 @@ public class OrderService {
     }
 
     private OrderVO maskPriceForCustomer(OrderVO vo) {
-        vo.setStatusLabel(customerStatusLabel(vo.getStatus()));
-        if (!OrderStatus.COMPLETED.equals(vo.getStatus())) {
+        boolean priceVisible = OrderStatus.COMPLETED.equals(vo.getStatus())
+                || Boolean.TRUE.equals(vo.getPrinted());
+        vo.setStatusLabel(customerStatusLabel(vo.getStatus(), vo.getPrinted()));
+        if (!priceVisible) {
             vo.setAmount(null);
+            vo.setReceivableAmount(null);
+            vo.setPaidAmount(null);
+            vo.setOutstandingAmount(null);
             if (vo.getItems() != null) {
                 vo.getItems().forEach(item -> {
                     item.setDealPrice(null);
@@ -942,7 +1454,12 @@ public class OrderService {
         return vo;
     }
 
-    private String customerStatusLabel(String status) {
+    private String customerStatusLabel(String status, Boolean printed) {
+        if (Boolean.TRUE.equals(printed)
+                && !OrderStatus.COMPLETED.equals(status)
+                && !OrderStatus.CANCELLED.equals(status)) {
+            return "已对账";
+        }
         if (status == null) {
             return "处理中";
         }

@@ -13,6 +13,11 @@ export interface ApplyParseResult {
   unmatched: string[]
 }
 
+export interface ParsedPreviewLine extends ParsedOrderLine {
+  matched: boolean
+  productName?: string
+}
+
 const UNIT_PATTERN = [...PRESET_UNITS]
   .sort((a, b) => b.length - a.length)
   .map((unit) => unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -123,4 +128,15 @@ export function applyParsedLines(
   }
 
   return { added, unmatched }
+}
+
+export function previewParsedLines(lines: ParsedOrderLine[], products: ProductItem[]): ParsedPreviewLine[] {
+  return lines.map((line) => {
+    const product = matchOrderProduct(line.name, products)
+    return {
+      ...line,
+      matched: Boolean(product),
+      productName: product?.name,
+    }
+  })
 }

@@ -16,6 +16,7 @@ import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.service.OrderItemStockService;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.worker.entity.Worker;
@@ -31,8 +32,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -52,6 +51,7 @@ public class DispatchService {
     private final ProductMapper productMapper;
     private final DispatchLogMapper dispatchLogMapper;
     private final WorkerService workerService;
+    private final OrderItemStockService orderItemStockService;
     private final MerchantContext merchantContext;
 
     @Transactional
@@ -136,6 +136,7 @@ public class DispatchService {
             item.setPickRemark(request.getPickRemark());
         }
         orderItemMapper.updateById(item);
+        orderItemStockService.syncPickStock(item);
         return toWorkerTaskVO(order, true);
     }
 
@@ -153,6 +154,7 @@ public class DispatchService {
             item.setActualQty(item.getOrderQty());
             item.setShortageFlag(0);
             orderItemMapper.updateById(item);
+            orderItemStockService.syncPickStock(item);
         }
         return toWorkerTaskVO(order, true);
     }
@@ -183,6 +185,7 @@ public class DispatchService {
                 item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
             orderItemMapper.updateById(item);
+            orderItemStockService.syncPickStock(item);
         }
         order.setStatus(OrderStatus.PICKED);
         orderMapper.updateById(order);

@@ -17,6 +17,18 @@
     </view>
 
     <view class="section">
+      <text class="section-title">通用</text>
+      <view class="cell" @tap="goMessages">
+        <text>消息通知</text>
+        <text class="arrow">›</text>
+      </view>
+      <view class="cell" @tap="showComingSoon('帮助中心')">
+        <text>帮助中心</text>
+        <text class="arrow">›</text>
+      </view>
+    </view>
+
+    <view class="section">
       <text class="section-title">关于</text>
       <view class="cell">
         <text>当前版本</text>
@@ -52,6 +64,10 @@ function showComingSoon(name: string) {
 
 function goProfile() {
   uni.navigateTo({ url: '/pages/boss/profile/index' })
+}
+
+function goMessages() {
+  uni.navigateTo({ url: '/pages/boss/messages/index' })
 }
 
 function handleLogout() {

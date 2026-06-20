@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../utils/config'
+import { getApiBaseUrl } from '../utils/config'
 import { request } from './request'
 
 export interface PaymentCreatePayload {
@@ -31,11 +31,11 @@ export function createBossPayment(data: PaymentCreatePayload) {
   })
 }
 
-export function fetchBossPayments(customerId: number) {
+export function fetchBossPayments(customerId?: number) {
   return request<PaymentInfo[]>({
     url: '/api/boss/payments',
     method: 'GET',
-    query: { customerId },
+    query: customerId ? { customerId } : undefined,
   })
 }
 
@@ -73,7 +73,7 @@ export function uploadPaymentVoucher(filePath: string): Promise<string> {
   const token = uni.getStorageSync('token') as string
   return new Promise((resolve, reject) => {
     uni.uploadFile({
-      url: `${API_BASE_URL}/api/boss/files/upload`,
+      url: `${getApiBaseUrl()}/api/boss/files/upload`,
       filePath,
       name: 'file',
       header: token ? { Authorization: `Bearer ${token}` } : {},

@@ -161,7 +161,7 @@ async function loadOrders() {
   try {
     orders.value = await fetchBossOrders({
       customerId: customerId.value,
-      status: 'COMPLETED',
+      receivableOnly: true,
       paymentFilter: paymentTab.value,
       dateType: 'ORDER',
       dateFrom: dateFrom.value,
