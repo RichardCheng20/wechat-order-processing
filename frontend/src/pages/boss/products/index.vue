@@ -166,7 +166,7 @@
 <script setup lang="ts">
 import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
 import { computed, nextTick, ref } from 'vue'
-import { COMMON_SALE_UNITS, mergeUnits, parseSaleUnits } from '../../../constants/units'
+import { COMMON_SALE_UNITS, mergeUnits, parseSaleUnits } from '@common/constants/units'
 import {
   deleteBossProduct,
   fetchBossCategories,
@@ -174,11 +174,11 @@ import {
   updateBossProductSaleStatus,
   type CategoryItem,
   type ProductItem,
-} from '../../../api/product'
-import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '../../../utils/category'
-import AppIcon from '../../../components/AppIcon.vue'
-import { resolveMediaUrl } from '../../../utils/media'
-import { useUserStore } from '../../../stores/user'
+} from '@common/api/product'
+import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '@common/utils/category'
+import AppIcon from '@/components/AppIcon.vue'
+import { resolveMediaUrl } from '@common/utils/media'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const categories = ref<CategoryItem[]>([])
@@ -262,7 +262,7 @@ onReady(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadData()

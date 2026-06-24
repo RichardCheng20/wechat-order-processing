@@ -1,12 +1,38 @@
 <template>
   <view class="page">
+    <view class="toolbar">
+      <view class="status-tabs">
+        <text
+          v-for="tab in CUSTOMER_ORDER_TABS"
+          :key="tab.value"
+          class="status-tab"
+          :class="{ active: activeTab === tab.value }"
+          @tap="switchTab(tab.value)"
+        >
+          {{ tab.label }}
+        </text>
+      </view>
+
+      <view class="date-bar">
+        <view class="quick-tabs">
+          <text class="quick-tab" :class="{ active: presetDays === 1 }" @tap="applyPreset(1)">今天</text>
+          <text class="quick-tab" :class="{ active: presetDays === 7 }" @tap="applyPreset(7)">近7日</text>
+          <text class="quick-tab" :class="{ active: presetDays === 30 }" @tap="applyPreset(30)">近30日</text>
+        </view>
+        <view class="calendar-btn" @tap="openRangePicker">
+          <AppIcon name="calendar" tone="gray" :size="16" :tile="false" />
+          <text v-if="rangeLabel" class="range-label">{{ rangeLabel }}</text>
+        </view>
+      </view>
+    </view>
+
     <view v-if="loading" class="loading-wrap">
       <u-loading-icon text="加载中" />
     </view>
 
     <view v-else-if="orders.length === 0" class="empty-wrap">
-      <u-empty mode="order" text="暂无订单" />
-      <u-button type="primary" plain text="去下单" @click="goHome" />
+      <u-empty mode="order" :text="emptyText" />
+      <u-button v-if="activeTab === 'PROCESSING' || activeTab === 'ALL'" type="primary" plain text="去下单" @click="goHome" />
     </view>
 
     <view v-else class="list">
@@ -15,22 +41,21 @@
         :key="item.id"
         class="card"
         :class="{ active: selectedId === item.id }"
-        @tap="selectOrder"
-        :data-id="item.id"
+        @tap="selectOrder(item)"
       >
         <view class="row-top">
           <text class="order-no">{{ item.orderNo }}</text>
-          <u-tag :text="item.statusLabel" :type="listStatusType(item)" size="mini" />
+          <u-tag :text="listStatusText(item)" :type="listStatusType(item)" size="mini" />
         </view>
         <text class="meta">{{ formatTime(item.createdAt) }} · {{ item.itemCount || 0 }} 种商品</text>
         <text v-if="item.amount != null" class="amount">合计 ¥{{ Number(item.amount).toFixed(2) }}</text>
-        <text v-else class="price-pending">金额待老板确认</text>
-        <text v-if="item.paymentStatusLabel && item.printed" class="payment-label">{{ item.paymentStatusLabel }}</text>
+        <text v-else class="price-pending">订单正在处理请耐心等待</text>
+        <text v-if="showPaymentLabel(item)" class="payment-label">{{ customerPaymentLabel(item) }}</text>
         <text v-if="item.remark" class="remark">备注：{{ item.remark }}</text>
       </view>
     </view>
 
-    <view v-if="detail" class="detail-panel">
+    <view v-if="detail" id="detail-panel" class="detail-panel">
       <text class="detail-title">订单明细</text>
       <view v-for="line in detail.items || []" :key="line.id" class="line-item">
         <view class="line-main">
@@ -44,7 +69,7 @@
       </view>
       <text v-if="detail.amount != null" class="detail-total">订单总额 ¥{{ Number(detail.amount).toFixed(2) }}</text>
       <text v-else class="price-pending detail-pending">金额待老板确认后展示</text>
-      <text v-if="detail.paymentStatusLabel && detail.printed" class="payment-detail">{{ detail.paymentStatusLabel }}</text>
+      <text v-if="detail && customerPaymentLabel(detail)" class="payment-detail">{{ customerPaymentLabel(detail) }}</text>
 
       <view v-if="detail.statementImageUrl" class="statement-section">
         <text class="statement-title">对账单</text>
@@ -67,18 +92,36 @@
       </view>
     </view>
 
+    <OrderDateRangePicker
+      :show="rangePickerVisible"
+      :start-date="dateFrom"
+      :end-date="dateTo"
+      @close="rangePickerVisible = false"
+      @confirm="onRangeConfirm"
+    />
+
     <CustomerTabBar active="orders" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { onLoad, onShareAppMessage, onShow } from '@dcloudio/uni-app'
-import { computed, ref } from 'vue'
-import { fetchCustomerOrderDetail, fetchCustomerOrders, notifyBossOrder, type OrderInfo } from '../../../api/order'
-import CustomerTabBar from '../../../components/CustomerTabBar.vue'
-import { switchCustomerTab } from '../../../utils/customer-nav'
-import { resolveMediaUrl } from '../../../utils/media'
-import { useUserStore } from '../../../stores/user'
+import { computed, nextTick, ref } from 'vue'
+import {
+  fetchCustomerOrderDetail,
+  fetchCustomerOrders,
+  notifyBossOrder,
+  type CustomerOrderTab,
+  type OrderInfo,
+} from '@common/api/order'
+import AppIcon from '@/components/AppIcon.vue'
+import CustomerTabBar from '@/components/CustomerTabBar.vue'
+import OrderDateRangePicker from '@/components/OrderDateRangePicker.vue'
+import { switchCustomerTab } from '@common/utils/customer-nav'
+import { formatShortDate, getLastNDaysRange, getTodayRange } from '@common/utils/date-range'
+import { resolveMediaUrl } from '@common/utils/media'
+import { CUSTOMER_ORDER_TABS, customerOrderListStatus, customerOrderListStatusType, customerPaymentLabel, customerTabLabel } from '@common/utils/order-flow'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const orders = ref<OrderInfo[]>([])
@@ -86,27 +129,51 @@ const detail = ref<OrderInfo | null>(null)
 const selectedId = ref<number | null>(null)
 const loading = ref(false)
 const notifying = ref(false)
+const activeTab = ref<CustomerOrderTab>('PROCESSING')
+const dateFrom = ref('')
+const dateTo = ref('')
+const presetDays = ref(7)
+const rangePickerVisible = ref(false)
 
 const canNotifyBoss = computed(() => detail.value?.status === 'PENDING_CONFIRM')
 
 const statementImageSrc = computed(() => resolveMediaUrl(detail.value?.statementImageUrl))
 
+const rangeLabel = computed(() => {
+  if (!dateFrom.value || presetDays.value > 0) return ''
+  const from = formatShortDate(dateFrom.value)
+  const to = formatShortDate(dateTo.value)
+  return from === to ? from : `${from}~${to}`
+})
+
+const emptyText = computed(() => {
+  if (activeTab.value === 'ALL') return '所选日期内暂无订单'
+  const tab = customerTabLabel(activeTab.value)
+  return `所选日期内暂无${tab}订单`
+})
+
 onShareAppMessage(() => buildSharePayload())
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
+  applyPreset(7, false)
   const id = query?.id ? Number(query.id) : null
   if (id) {
     selectedId.value = id
     await loadDetail(id)
+    scrollToDetail()
   }
 })
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
+    return
+  }
+  if (!dateFrom.value) {
+    applyPreset(7, false)
     return
   }
   await loadOrders()
@@ -117,12 +184,46 @@ onShow(async () => {
 
 let loadingOrders = false
 
+function applyPreset(days: number, reload = true) {
+  presetDays.value = days
+  const range = days === 1 ? getTodayRange() : getLastNDaysRange(days)
+  dateFrom.value = range.from
+  dateTo.value = range.to
+  if (reload) {
+    loadOrders()
+  }
+}
+
+function openRangePicker() {
+  rangePickerVisible.value = true
+}
+
+function onRangeConfirm(payload: { from: string; to: string }) {
+  rangePickerVisible.value = false
+  dateFrom.value = payload.from
+  dateTo.value = payload.to
+  presetDays.value = 0
+  loadOrders()
+}
+
+function switchTab(tab: CustomerOrderTab) {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  selectedId.value = null
+  detail.value = null
+  loadOrders()
+}
+
 async function loadOrders() {
-  if (loadingOrders) return
+  if (loadingOrders || !dateFrom.value || !dateTo.value) return
   loadingOrders = true
   loading.value = true
   try {
-    orders.value = await fetchCustomerOrders()
+    orders.value = await fetchCustomerOrders({
+      dateFrom: dateFrom.value,
+      dateTo: dateTo.value,
+      tabFilter: activeTab.value,
+    })
   } catch {
     orders.value = []
   } finally {
@@ -139,10 +240,21 @@ async function loadDetail(id: number) {
   }
 }
 
-function selectOrder(e: { currentTarget: { dataset: { id?: string | number } } }) {
-  const id = Number(e.currentTarget.dataset.id)
-  selectedId.value = id
-  loadDetail(id)
+async function selectOrder(item: OrderInfo) {
+  selectedId.value = item.id
+  await loadDetail(item.id)
+  scrollToDetail()
+}
+
+function scrollToDetail() {
+  void nextTick(() => {
+    setTimeout(() => {
+      uni.pageScrollTo({
+        selector: '#detail-panel',
+        duration: 300,
+      })
+    }, 80)
+  })
 }
 
 function buildSharePayload() {
@@ -182,17 +294,18 @@ async function handleNotifyBoss() {
   }
 }
 
-function statusType(status: string) {
-  if (status === 'PENDING_CONFIRM') return 'warning'
-  if (status === 'PENDING_PICK' || status === 'PICKING') return 'primary'
-  if (status === 'PRICED' || status === 'PENDING_PRICE') return 'warning'
-  if (status === 'COMPLETED') return 'success'
-  return 'info'
+function listStatusText(item: OrderInfo) {
+  return customerOrderListStatus(item)
 }
 
 function listStatusType(item: OrderInfo) {
-  if (item.printed && item.status !== 'COMPLETED') return 'success'
-  return statusType(item.status)
+  return customerOrderListStatusType(item)
+}
+
+function showPaymentLabel(item: OrderInfo) {
+  const payment = customerPaymentLabel(item)
+  if (!payment) return false
+  return customerOrderListStatus(item) !== payment
 }
 
 function formatTime(value?: string) {
@@ -217,6 +330,80 @@ function previewStatement() {
   padding: 24rpx;
   padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+.toolbar {
+  margin-bottom: 20rpx;
+}
+
+.status-tabs {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.status-tab {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  font-size: 28rpx;
+  color: #66736b;
+  background: #fff;
+  border-radius: 12rpx;
+  border: 2rpx solid transparent;
+}
+
+.status-tab.active {
+  color: #07c160;
+  font-weight: 600;
+  border-color: #07c160;
+  background: #f0faf4;
+}
+
+.date-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.quick-tabs {
+  display: flex;
+  gap: 8rpx;
+  flex: 1;
+}
+
+.quick-tab {
+  padding: 10rpx 20rpx;
+  font-size: 24rpx;
+  color: #66736b;
+  background: #fff;
+  border-radius: 999rpx;
+}
+
+.quick-tab.active {
+  color: #07c160;
+  background: #e8f8ef;
+  font-weight: 600;
+}
+
+.calendar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 16rpx;
+  background: #fff;
+  border-radius: 999rpx;
+  flex-shrink: 0;
+}
+
+.range-label {
+  font-size: 22rpx;
+  color: #66736b;
+  max-width: 160rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .loading-wrap,
@@ -251,6 +438,10 @@ function previewStatement() {
   padding: 28rpx;
   margin-bottom: 16rpx;
   border: 2rpx solid transparent;
+}
+
+.card:active {
+  opacity: 0.92;
 }
 
 .card.active {

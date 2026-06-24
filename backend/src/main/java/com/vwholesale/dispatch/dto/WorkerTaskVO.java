@@ -15,12 +15,14 @@ public class WorkerTaskVO {
     private Long id;
     private String orderNo;
     private String customerName;
+    private String merchantName;
     private String deliveryAddressShort;
     private String status;
     private String statusLabel;
     private LocalDate deliveryDate;
     private String remark;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private Integer itemCount;
     private List<WorkerTaskItemVO> items;
 }

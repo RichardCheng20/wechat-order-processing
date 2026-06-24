@@ -159,11 +159,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { fetchBossCustomers, type CustomerItem } from '../../../api/customer'
-import { createBossPayment, uploadPaymentVoucher } from '../../../api/payment'
-import AppIcon from '../../../components/AppIcon.vue'
-import { deliveryDateString } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
+import { fetchBossCustomers, type CustomerItem } from '@common/api/customer'
+import { createBossPayment, uploadPaymentVoucher } from '@common/api/payment'
+import AppIcon from '@/components/AppIcon.vue'
+import { deliveryDateString } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
 
 interface VoucherPreview {
   localPath: string
@@ -220,7 +220,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   allCustomers.value = await fetchBossCustomers()

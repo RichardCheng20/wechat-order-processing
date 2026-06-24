@@ -1,5 +1,14 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_API_BASE_URL?: string
+  readonly UNI_PLATFORM?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
 declare const wx: WechatMiniprogram.Wx
 
 declare module '*.vue' {

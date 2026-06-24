@@ -50,30 +50,37 @@ public class BossPricingController {
     @GetMapping("/pricing/products/{productId}")
     public ApiResponse<PricingProductDetailVO> productPricingDetail(
             @PathVariable Long productId,
+            @RequestParam(required = false) String customName,
             @RequestParam(required = false) String priceFilter,
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo) {
-        return ApiResponse.ok(orderPricingService.getProductPricingDetail(productId, deliveryFrom, deliveryTo, priceFilter));
+        return ApiResponse.ok(orderPricingService.getProductPricingDetail(
+                productId, customName, deliveryFrom, deliveryTo, priceFilter));
     }
 
     @Operation(summary = "获取商品参考价")
     @PostMapping("/pricing/products/{productId}/fetch-prices")
     public ApiResponse<PricingProductDetailVO> fetchProductPrices(
             @PathVariable Long productId,
+            @RequestParam(required = false) String customName,
             @RequestParam(required = false) String priceFilter,
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo) {
-        return ApiResponse.ok(orderPricingService.fetchProductReferencePrices(productId, deliveryFrom, deliveryTo, priceFilter));
+        return ApiResponse.ok(orderPricingService.fetchProductReferencePrices(
+                productId, customName, deliveryFrom, deliveryTo, priceFilter));
     }
 
     @Operation(summary = "提交商品录价")
     @PostMapping("/pricing/products/{productId}/submit")
     public ApiResponse<PricingProductDetailVO> submitProductPricing(
             @PathVariable Long productId,
+            @RequestParam(required = false) String customName,
             @RequestParam(required = false) LocalDate deliveryFrom,
             @RequestParam(required = false) LocalDate deliveryTo,
+            @RequestParam(required = false) String priceFilter,
             @Valid @RequestBody PricingProductSubmitRequest request) {
-        return ApiResponse.ok(orderPricingService.submitProductPricing(productId, request, deliveryFrom, deliveryTo));
+        return ApiResponse.ok(orderPricingService.submitProductPricing(
+                productId, customName, request, deliveryFrom, deliveryTo, priceFilter));
     }
 
     @Operation(summary = "录价详情")

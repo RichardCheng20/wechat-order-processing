@@ -11,9 +11,23 @@ public final class RoleChecker {
 
     public static void requireBoss() {
         StpUtil.checkLogin();
-        if (!StpUtil.hasRole(UserRole.OWNER_ADMIN.name()) && !StpUtil.hasRole(UserRole.PARTNER_ADMIN.name())) {
+        if (!isBossRole()) {
             throw BusinessException.of(403, "需要管理员权限");
         }
+    }
+
+    /** 仅老板（主管理员）可查看数据平台 / 经营统计 */
+    public static void requireOwnerAdmin() {
+        StpUtil.checkLogin();
+        if (!StpUtil.hasRole(UserRole.OWNER_ADMIN.name())) {
+            throw BusinessException.of(403, "仅老板可查看经营数据");
+        }
+    }
+
+    public static boolean isBossRole() {
+        return StpUtil.hasRole(UserRole.OWNER_ADMIN.name())
+                || StpUtil.hasRole(UserRole.STALL_MANAGER.name())
+                || StpUtil.hasRole("PARTNER_ADMIN");
     }
 
     public static void requireCustomer() {

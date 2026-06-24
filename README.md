@@ -41,11 +41,14 @@ cd backend/docker && docker compose up -d
 
 ### 2. 后端
 
+`~/.zshrc` 已配置 JDK 21，新开终端后直接：
+
 ```bash
-source backend/scripts/dev-env.sh
 cd backend
 mvn spring-boot:run
 ```
+
+若 Java 未找到，可临时执行 `source backend/scripts/dev-env.sh`。
 
 文档：http://localhost:8080/doc.html
 
@@ -58,6 +61,32 @@ npm run dev:mp-weixin
 ```
 
 用微信开发者工具打开 `frontend/dist/dev/mp-weixin`。
+
+### 4. H5 内测（浏览器，无需小程序审核）
+
+先确保后端已启动（`http://127.0.0.1:8080`），再开前端：
+
+```bash
+cd frontend
+npm run dev:h5
+```
+
+浏览器打开 **http://localhost:5173**（或终端里显示的地址）。
+
+- H5 无法使用微信登录，登录页用 **「老板登录 / 客户A…」** 快捷账号进入
+- 本地 dev 默认走 Vite 代理：`/api` → `127.0.0.1:8080`，一般不用填后端地址
+- 若代理不通，可在登录页填 `http://127.0.0.1:8080` 后重新登录
+
+**局域网给别人试用**：同一 Wi-Fi 下用手机浏览器访问 `http://<你电脑IP>:5173`（需本机防火墙放行 5173）。
+
+**部署到服务器**（后续）：
+
+```bash
+cd frontend
+# 构建前在 .env.production 设置 VITE_API_BASE_URL=https://你的API域名
+npm run build:h5
+# 将 dist/build/h5 目录交给 Nginx；推荐同域反代 /api 到后端
+```
 
 ## Dev 测试账号（登录页一键切换）
 

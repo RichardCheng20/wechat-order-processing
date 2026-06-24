@@ -32,7 +32,8 @@ CREATE TABLE users (
 
 -- 批发客户档案
 CREATE TABLE customers (
-    id                    BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    id                    BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '内部主键',
+    customer_no           VARCHAR(11)   NULL COMMENT '业务编号 yyyymmdd001',
     merchant_id           BIGINT        NOT NULL DEFAULT 1,
     name                  VARCHAR(100)  NOT NULL COMMENT '客户名称',
     contact_name          VARCHAR(50)   NULL,
@@ -53,7 +54,8 @@ CREATE TABLE customers (
     created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_customers_merchant (merchant_id),
-    KEY idx_customers_invite_code (invite_code)
+    KEY idx_customers_invite_code (invite_code),
+    UNIQUE KEY uk_customers_merchant_customer_no (merchant_id, customer_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客户档案';
 
 -- 工人档案
@@ -108,7 +110,7 @@ CREATE TABLE product_prices (
     id             BIGINT         NOT NULL AUTO_INCREMENT PRIMARY KEY,
     merchant_id    BIGINT         NOT NULL DEFAULT 1,
     product_id     BIGINT         NOT NULL,
-    customer_id    BIGINT         NULL COMMENT '为空表示基础价',
+    customer_id    BIGINT         NOT NULL DEFAULT 0 COMMENT '0=基础价，其它=客户专属价',
     price          DECIMAL(10, 2) NOT NULL,
     effective_date DATE           NOT NULL,
     status         TINYINT        NOT NULL DEFAULT 1,

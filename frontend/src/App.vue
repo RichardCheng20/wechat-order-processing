@@ -1,9 +1,25 @@
 <script setup lang="ts">
 import { onLaunch } from '@dcloudio/uni-app'
-import { useUserStore } from './stores/user'
 
-onLaunch(() => {
-  useUserStore().hydrateFromStorage()
+function captureLaunchEntry(options?: { query?: Record<string, string> }) {
+  const query = options?.query
+  if (!query) return
+  if (query.m) {
+    const id = Number(query.m)
+    if (!Number.isNaN(id) && id > 0) {
+      uni.setStorageSync('entry_merchant_id', id)
+    }
+  }
+  if (query.act) {
+    uni.setStorageSync('entry_activation_token', String(query.act).trim())
+  }
+  if (query.code) {
+    uni.setStorageSync('entry_invite_code', String(query.code).trim().toUpperCase())
+  }
+}
+
+onLaunch((options) => {
+  captureLaunchEntry(options as { query?: Record<string, string> })
 })
 </script>
 

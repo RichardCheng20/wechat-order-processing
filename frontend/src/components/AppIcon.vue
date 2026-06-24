@@ -55,6 +55,7 @@ const iconMap: Record<string, string> = {
   logout: 'arrow-rightward',
   search: 'search',
   filter: 'list-dot',
+  calendar: 'calendar',
   batch: 'list',
   voice: 'mic',
   camera: 'camera-fill',

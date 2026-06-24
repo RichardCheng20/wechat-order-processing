@@ -7,6 +7,8 @@ import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
+import com.vwholesale.mq.model.OrderEventMessage;
+import com.vwholesale.mq.publisher.OrderEventAfterCommitPublisher;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.mapper.OrderMapper;
 import com.vwholesale.order.support.OrderReceivableRules;
@@ -41,6 +43,7 @@ public class PaymentService {
     private final OrderMapper orderMapper;
     private final CustomerMapper customerMapper;
     private final MerchantContext merchantContext;
+    private final OrderEventAfterCommitPublisher orderEventAfterCommitPublisher;
 
     @Transactional
     public PaymentVO create(PaymentCreateRequest request) {
@@ -78,6 +81,9 @@ public class PaymentService {
 
         allocateToOrders(customer.getId(), merchantId, amount, payment);
 
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.paymentReceived(merchantId, customer.getId(), payment.getId()));
+
         return toVO(payment, customer.getName());
     }
 
@@ -104,7 +110,7 @@ public class PaymentService {
     }
 
     public BossPaymentStatsVO paymentStats(LocalDate dateFrom, LocalDate dateTo) {
-        RoleChecker.requireBoss();
+        RoleChecker.requireOwnerAdmin();
         if (dateFrom == null || dateTo == null) {
             throw BusinessException.of(400, "请选择日期范围");
         }

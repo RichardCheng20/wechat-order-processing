@@ -60,11 +60,12 @@ import { onShow } from '@dcloudio/uni-app'
 import {
   fetchBossProductRanking,
   type ProductRankingRow,
-} from '../../../../api/dashboard'
-import AppIcon from '../../../../components/AppIcon.vue'
-import OrderDateRangePicker from '../../../../components/OrderDateRangePicker.vue'
-import { getLastNDaysRange, getTodayRange } from '../../../../utils/date-range'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/dashboard'
+import AppIcon from '@/components/AppIcon.vue'
+import OrderDateRangePicker from '@/components/OrderDateRangePicker.vue'
+import { getLastNDaysRange, getTodayRange } from '@common/utils/date-range'
+import { useUserStore } from '@common/stores/user'
+import { guardOwnerAdminPage } from '@common/utils/boss-access'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -82,10 +83,7 @@ const dateTypeOptions = [
 const dateTypeIndex = ref(0)
 
 onShow(async () => {
-  if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
-    return
-  }
+  if (!guardOwnerAdminPage()) return
   if (!dateFrom.value) {
     applyPreset(7)
     return

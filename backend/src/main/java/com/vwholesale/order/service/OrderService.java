@@ -10,6 +10,9 @@ import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
+import com.vwholesale.mq.model.OrderEventMessage;
+import com.vwholesale.mq.publisher.OrderEventAfterCommitPublisher;
+import com.vwholesale.mq.service.BossStatsCacheService;
 import com.vwholesale.order.dto.BossCustomerRankingVO;
 import com.vwholesale.order.dto.BossCustomerReportVO;
 import com.vwholesale.order.dto.BossDashboardVO;
@@ -33,6 +36,8 @@ import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.support.OrderFlowStatus;
+import com.vwholesale.order.support.OrderItemDisplay;
 import com.vwholesale.order.support.OrderReceivableRules;
 import com.vwholesale.payment.entity.Payment;
 import com.vwholesale.payment.mapper.PaymentMapper;
@@ -73,11 +78,15 @@ public class OrderService {
     private final OrderItemMapper orderItemMapper;
     private final CustomerMapper customerMapper;
     private final ProductMapper productMapper;
+    private final ProductService productService;
     private final ProductPurchasePriceService productPurchasePriceService;
     private final WorkerMapper workerMapper;
     private final PaymentMapper paymentMapper;
     private final SupplierMapper supplierMapper;
     private final MerchantContext merchantContext;
+    private final OrderItemStockService orderItemStockService;
+    private final OrderEventAfterCommitPublisher orderEventAfterCommitPublisher;
+    private final BossStatsCacheService bossStatsCacheService;
 
     @Transactional
     public OrderVO createByCustomer(OrderCreateRequest request) {
@@ -85,7 +94,7 @@ public class OrderService {
         Long customerId = RoleChecker.currentCustomerId();
 
         List<OrderItemCreateRequest> items = request.getItems();
-        Map<Long, Product> productMap = loadProducts(items);
+        Map<Long, Product> productMap = loadCatalogProducts(items);
 
         Order order = new Order();
         order.setMerchantId(merchantContext.currentMerchantId());
@@ -100,9 +109,7 @@ public class OrderService {
             if (customer.getStatus() != null && customer.getStatus() == 0) {
                 throw BusinessException.of(400, "客户档案已停用，无法下单");
             }
-            String initialStatus = customer.getAutoConfirmOrder() != null && customer.getAutoConfirmOrder() == 1
-                    ? OrderStatus.PENDING_PRICE
-                    : OrderStatus.PENDING_CONFIRM;
+            String initialStatus = OrderStatus.PENDING_CONFIRM;
             order.setCustomerId(customerId);
             order.setStatus(initialStatus);
             order.setDeliveryAddress(customer.getAddress());
@@ -121,7 +128,17 @@ public class OrderService {
         orderMapper.insert(order);
 
         for (OrderItemCreateRequest itemReq : items) {
+            if (StringUtils.hasText(itemReq.getCustomName())) {
+                insertCustomOrderItem(order.getId(), itemReq);
+                continue;
+            }
+            if (itemReq.getProductId() == null) {
+                throw BusinessException.of(400, "请选择商品或填写自定义商品名称");
+            }
             Product product = productMap.get(itemReq.getProductId());
+            if (product == null) {
+                throw BusinessException.of(400, "商品不可下单或已下架");
+            }
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
             item.setProductId(product.getId());
@@ -134,6 +151,8 @@ public class OrderService {
             orderItemMapper.insert(item);
         }
 
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.orderCreated(order.getMerchantId(), order.getId()));
         return getDetail(order.getId());
     }
 
@@ -169,9 +188,7 @@ public class OrderService {
             if (customer.getStatus() != null && customer.getStatus() == 0) {
                 throw BusinessException.of(400, "客户档案已停用，无法开单");
             }
-            String initialStatus = customer.getAutoConfirmOrder() != null && customer.getAutoConfirmOrder() == 1
-                    ? OrderStatus.PENDING_PRICE
-                    : OrderStatus.PENDING_CONFIRM;
+            String initialStatus = OrderStatus.PENDING_CONFIRM;
             order.setCustomerId(customer.getId());
             order.setStatus(initialStatus);
             order.setDeliveryAddress(customer.getAddress());
@@ -219,40 +236,53 @@ public class OrderService {
     @Transactional
     public OrderVO updateByBoss(Long id, BossOrderUpdateRequest request) {
         RoleChecker.requireBoss();
-        Order order = getOrderOrThrow(id);
-        if (OrderStatus.CANCELLED.equals(order.getStatus())) {
+        Order oldOrder = getOrderOrThrow(id);
+        if (OrderStatus.CANCELLED.equals(oldOrder.getStatus())) {
             throw BusinessException.of(400, "已取消订单不可修改");
         }
-        if (OrderStatus.COMPLETED.equals(order.getStatus())) {
+        if (OrderStatus.COMPLETED.equals(oldOrder.getStatus())) {
             throw BusinessException.of(400, "已完成订单不可修改");
         }
-        if (!BOSS_EDITABLE_STATUSES.contains(order.getStatus())) {
+        if (!BOSS_EDITABLE_STATUSES.contains(oldOrder.getStatus())) {
             throw BusinessException.of(400, "当前状态不可修改订单明细");
         }
 
-        String previousStatus = order.getStatus();
         List<BossOrderItemCreateRequest> items = request.getItems();
         Map<Long, Product> productMap = loadProductsForBossUpdate(items);
 
-        if (order.getCustomerId() == null) {
-            if (StringUtils.hasText(request.getCustomerName())) {
-                String guestName = resolveGuestCustomerName(request.getCustomerName());
-                order.setGuestCustomerName(guestName);
-                order.setContactName(guestName);
-                order.setDeliveryAddressShort(guestName);
-            } else if (!StringUtils.hasText(order.getGuestCustomerName())) {
+        orderItemStockService.reverseOrderStock(oldOrder.getId());
+        oldOrder.setStatus(OrderStatus.CANCELLED);
+        orderMapper.updateById(oldOrder);
+
+        Order order = new Order();
+        order.setMerchantId(oldOrder.getMerchantId());
+        order.setOrderNo(generateOrderNo());
+        order.setSource(oldOrder.getSource());
+        order.setDeliveryDate(request.getDeliveryDate() != null ? request.getDeliveryDate() : oldOrder.getDeliveryDate());
+        order.setRemark(request.getRemark() != null ? request.getRemark() : oldOrder.getRemark());
+        order.setCreatedBy(RoleChecker.currentUserId());
+        order.setStatus(resolveReorderInitialStatus(oldOrder));
+
+        if (oldOrder.getCustomerId() != null) {
+            order.setCustomerId(oldOrder.getCustomerId());
+            order.setDeliveryAddress(oldOrder.getDeliveryAddress());
+            order.setDeliveryAddressShort(oldOrder.getDeliveryAddressShort());
+            order.setContactName(oldOrder.getContactName());
+            order.setContactPhone(oldOrder.getContactPhone());
+        } else {
+            String guestName = StringUtils.hasText(request.getCustomerName())
+                    ? resolveGuestCustomerName(request.getCustomerName())
+                    : oldOrder.getGuestCustomerName();
+            if (!StringUtils.hasText(guestName)) {
                 throw BusinessException.of(400, "请输入临时客户名称");
             }
+            order.setCustomerId(null);
+            order.setGuestCustomerName(guestName);
+            order.setContactName(guestName);
+            order.setDeliveryAddressShort(guestName);
         }
 
-        if (request.getDeliveryDate() != null) {
-            order.setDeliveryDate(request.getDeliveryDate());
-        }
-        if (request.getRemark() != null) {
-            order.setRemark(request.getRemark());
-        }
-
-        orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        orderMapper.insert(order);
 
         for (BossOrderItemCreateRequest itemReq : items) {
             Product product = productMap.get(itemReq.getProductId());
@@ -266,36 +296,17 @@ public class OrderService {
             orderItemMapper.insert(item);
         }
 
-        String nextStatus = order.getStatus();
-        if (OrderStatus.PRICED.equals(previousStatus)
-                || OrderStatus.PICKED.equals(previousStatus)
-                || OrderStatus.PENDING_PRICE.equals(previousStatus)
-                || OrderStatus.PICKING.equals(previousStatus)) {
-            nextStatus = OrderStatus.PENDING_PICK;
-        }
-
-        LambdaUpdateWrapper<Order> updateWrapper = new LambdaUpdateWrapper<Order>()
-                .eq(Order::getId, order.getId())
-                .set(Order::getAmount, null)
-                .set(Order::getReceivableAmount, null)
-                .set(Order::getStatus, nextStatus);
-        if (request.getDeliveryDate() != null) {
-            updateWrapper.set(Order::getDeliveryDate, request.getDeliveryDate());
-        }
-        if (request.getRemark() != null) {
-            updateWrapper.set(Order::getRemark, request.getRemark());
-        }
-        if (order.getCustomerId() == null && StringUtils.hasText(order.getGuestCustomerName())) {
-            updateWrapper
-                    .set(Order::getGuestCustomerName, order.getGuestCustomerName())
-                    .set(Order::getContactName, order.getContactName())
-                    .set(Order::getDeliveryAddressShort, order.getDeliveryAddressShort());
-        }
-        orderMapper.update(null, updateWrapper);
         return getDetail(order.getId());
     }
 
-    public List<OrderVO> listForCustomer() {
+    private String resolveReorderInitialStatus(Order oldOrder) {
+        if (OrderStatus.PENDING_CONFIRM.equals(oldOrder.getStatus())) {
+            return OrderStatus.PENDING_CONFIRM;
+        }
+        return OrderStatus.PENDING_PICK;
+    }
+
+    public List<OrderVO> listForCustomer(LocalDate dateFrom, LocalDate dateTo, String tabFilter) {
         RoleChecker.requireCustomer();
         Long customerId = RoleChecker.currentCustomerId();
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
@@ -308,13 +319,37 @@ public class OrderService {
             wrapper.isNull(Order::getCustomerId)
                     .eq(Order::getCreatedBy, RoleChecker.currentUserId());
         }
+        applyBossDateFilter(wrapper, "ORDER", dateFrom, dateTo, null, null);
         return listOrders(wrapper)
                 .stream()
+                .filter(vo -> matchesCustomerTabFilter(vo, tabFilter))
                 .map(this::maskPriceForCustomer)
                 .toList();
     }
 
-    public List<OrderVO> listForBoss(String status, Boolean pricingPending, String keyword,
+    private boolean matchesCustomerTabFilter(OrderVO vo, String tabFilter) {
+        if (!StringUtils.hasText(tabFilter)) {
+            return true;
+        }
+        int stage = OrderFlowStatus.resolveStageIndex(
+                vo.getStatus(),
+                Boolean.TRUE.equals(vo.getPrinted()),
+                vo.getAmount(),
+                vo.getPriceIncomplete(),
+                vo.getPaidAmount(),
+                vo.getReceivableAmount(),
+                vo.getPickedItemCount(),
+                vo.getItemCount());
+        return switch (tabFilter.trim().toUpperCase()) {
+            case "ALL" -> true;
+            case "PROCESSING" -> stage >= 0 && stage < 4;
+            case "UNPAID" -> stage == 4;
+            case "PAID" -> stage >= 5;
+            default -> true;
+        };
+    }
+
+    public List<OrderVO> listForBoss(String status, Boolean pricingPending, String keyword, String keywordType,
                                      String pickFilter, String dateType,
                                      LocalDate dateFrom, LocalDate dateTo,
                                      LocalDate deliveryFrom, LocalDate deliveryTo,
@@ -335,19 +370,23 @@ public class OrderService {
         }
         applyBossDateFilter(wrapper, dateType, dateFrom, dateTo, deliveryFrom, deliveryTo);
         if (StringUtils.hasText(keyword)) {
-            List<Long> customerIds = customerMapper.selectList(new LambdaQueryWrapper<Customer>()
-                            .eq(Customer::getMerchantId, merchantContext.currentMerchantId())
-                            .like(Customer::getName, keyword.trim()))
-                    .stream()
-                    .map(Customer::getId)
-                    .toList();
             String kw = keyword.trim();
-            if (customerIds.isEmpty()) {
-                wrapper.like(Order::getGuestCustomerName, kw);
+            if (StringUtils.hasText(keywordType) && "ORDER_NO".equalsIgnoreCase(keywordType.trim())) {
+                wrapper.like(Order::getOrderNo, kw);
             } else {
-                wrapper.and(w -> w.in(Order::getCustomerId, customerIds)
-                        .or()
-                        .like(Order::getGuestCustomerName, kw));
+                List<Long> customerIds = customerMapper.selectList(new LambdaQueryWrapper<Customer>()
+                                .eq(Customer::getMerchantId, merchantContext.currentMerchantId())
+                                .like(Customer::getName, kw))
+                        .stream()
+                        .map(Customer::getId)
+                        .toList();
+                if (customerIds.isEmpty()) {
+                    wrapper.like(Order::getGuestCustomerName, kw);
+                } else {
+                    wrapper.and(w -> w.in(Order::getCustomerId, customerIds)
+                            .or()
+                            .like(Order::getGuestCustomerName, kw));
+                }
             }
         }
         List<OrderVO> orders = listOrders(wrapper);
@@ -430,6 +469,10 @@ public class OrderService {
         return vo;
     }
 
+    public OrderVO getDetailInternal(Long id) {
+        return toDetailVO(getOrderOrThrow(id));
+    }
+
     @Transactional
     public OrderVO confirmByBoss(Long id) {
         RoleChecker.requireBoss();
@@ -437,8 +480,11 @@ public class OrderService {
         if (!OrderStatus.PENDING_CONFIRM.equals(order.getStatus())) {
             throw BusinessException.of(400, "只有待确认订单可以确认");
         }
-        order.setStatus(OrderStatus.PENDING_PRICE);
+        order.setStatus(OrderStatus.PENDING_PICK);
         orderMapper.updateById(order);
+        orderItemStockService.applyConfirmStock(id);
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.orderConfirmed(order.getMerchantId(), order.getId()));
         return getDetail(id);
     }
 
@@ -474,6 +520,8 @@ public class OrderService {
             order.setStatementImageUrl(request.getStatementImageUrl().trim());
         }
         orderMapper.updateById(order);
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.orderStatementSent(order.getMerchantId(), order.getId()));
         return getDetail(id);
     }
 
@@ -498,6 +546,9 @@ public class OrderService {
         }
         if (CLEAR_PRICING_STATUSES.contains(newStatus)) {
             clearOrderPricing(order);
+        }
+        if (OrderStatus.CANCELLED.equals(newStatus)) {
+            orderItemStockService.reverseOrderStock(order.getId());
         }
         if (OrderStatus.PENDING_CONFIRM.equals(newStatus)) {
             order.setAssignedWorkerId(null);
@@ -563,6 +614,8 @@ public class OrderService {
         }
         paymentMapper.insert(payment);
 
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.orderPaymentReceived(order.getMerchantId(), order.getId()));
         return getDetail(id);
     }
 
@@ -606,8 +659,26 @@ public class OrderService {
         return summary;
     }
 
-    public BossDashboardVO bossDashboard() {
+    public long countPendingConfirmOrders() {
         RoleChecker.requireBoss();
+        Long merchantId = merchantContext.currentMerchantId();
+        return orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantId)
+                .eq(Order::getStatus, OrderStatus.PENDING_CONFIRM));
+    }
+
+    public BossDashboardVO bossDashboard() {
+        RoleChecker.requireOwnerAdmin();
+        BossDashboardVO cached = bossStatsCacheService.getCachedDashboard();
+        if (cached != null) {
+            return cached;
+        }
+        BossDashboardVO dashboard = computeBossDashboard();
+        bossStatsCacheService.refresh();
+        return dashboard;
+    }
+
+    public BossDashboardVO computeBossDashboard() {
         Long merchantId = merchantContext.currentMerchantId();
         LocalDate today = LocalDate.now();
 
@@ -663,7 +734,7 @@ public class OrderService {
     }
 
     public BossRevenueStatsVO revenueStats(LocalDate dateFrom, LocalDate dateTo, String dateType) {
-        RoleChecker.requireBoss();
+        RoleChecker.requireOwnerAdmin();
         validateStatsDateRange(dateFrom, dateTo);
         boolean byOrderDate = resolveStatsByOrderDate(dateType);
         List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
@@ -701,7 +772,7 @@ public class OrderService {
     }
 
     public BossCustomerRankingVO customerRanking(LocalDate dateFrom, LocalDate dateTo, String dateType) {
-        RoleChecker.requireBoss();
+        RoleChecker.requireOwnerAdmin();
         validateStatsDateRange(dateFrom, dateTo);
         boolean byOrderDate = resolveStatsByOrderDate(dateType);
         List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
@@ -762,7 +833,7 @@ public class OrderService {
     }
 
     public BossCustomerReportVO customerReport(LocalDate dateFrom, LocalDate dateTo, String dateType) {
-        RoleChecker.requireBoss();
+        RoleChecker.requireOwnerAdmin();
         validateStatsDateRange(dateFrom, dateTo);
         boolean byOrderDate = resolveStatsByOrderDate(dateType);
         List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
@@ -875,7 +946,7 @@ public class OrderService {
     }
 
     public BossProductRankingVO productRanking(LocalDate dateFrom, LocalDate dateTo, String dateType) {
-        RoleChecker.requireBoss();
+        RoleChecker.requireOwnerAdmin();
         validateStatsDateRange(dateFrom, dateTo);
         boolean byOrderDate = resolveStatsByOrderDate(dateType);
         List<Order> orders = loadSalesOrdersInRange(dateFrom, dateTo, byOrderDate);
@@ -1071,6 +1142,12 @@ public class OrderService {
             if (qty == null) {
                 continue;
             }
+            if (OrderItemDisplay.isCustomItem(item)) {
+                if (item.getCostPrice() != null) {
+                    cost = cost.add(item.getCostPrice().multiply(qty));
+                }
+                continue;
+            }
             BigDecimal unitCost = purchasePrices.get(item.getProductId());
             if (unitCost == null) {
                 continue;
@@ -1111,10 +1188,13 @@ public class OrderService {
                 .collect(Collectors.groupingBy(OrderItem::getOrderId,
                         Collectors.collectingAndThen(Collectors.toList(), OrderService::isPriceIncomplete)));
 
-        Set<Long> workerIds = orders.stream().map(Order::getAssignedWorkerId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, String> workerNames = workerIds.isEmpty()
+        Set<Long> workerIds = orders.stream()
+                .flatMap(o -> java.util.stream.Stream.of(o.getAssignedWorkerId(), o.getPickedByWorkerId()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Worker> workerMap = workerIds.isEmpty()
                 ? Map.of()
-                : workerMapper.selectBatchIds(workerIds).stream().collect(Collectors.toMap(Worker::getId, Worker::getName));
+                : workerMapper.selectBatchIds(workerIds).stream().collect(Collectors.toMap(Worker::getId, w -> w));
 
         Long merchantId = merchantContext.currentMerchantId();
         Map<Long, BigDecimal> customerOutstanding = loadCustomerOutstandingMap(merchantId);
@@ -1125,9 +1205,15 @@ public class OrderService {
                             itemCounts.getOrDefault(order.getId(), 0L).intValue(),
                             pickedCounts.getOrDefault(order.getId(), 0L).intValue(),
                             priceIncompleteMap.getOrDefault(order.getId(), true),
-                            order.getAssignedWorkerId() != null
-                                    ? workerNames.get(order.getAssignedWorkerId())
+                            order.getAssignedWorkerId() != null && workerMap.containsKey(order.getAssignedWorkerId())
+                                    ? workerMap.get(order.getAssignedWorkerId()).getName()
                                     : null);
+                    if (order.getPickedByWorkerId() != null) {
+                        Worker picker = workerMap.get(order.getPickedByWorkerId());
+                        if (picker != null) {
+                            vo.setPickedByWorkerCode(picker.getWorkerCode());
+                        }
+                    }
                     if (order.getCustomerId() != null) {
                         vo.setCustomerOutstandingAmount(
                                 customerOutstanding.getOrDefault(order.getCustomerId(), BigDecimal.ZERO));
@@ -1205,10 +1291,12 @@ public class OrderService {
                 ? Map.of()
                 : productMapper.selectBatchIds(productIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
 
-        List<OrderItemVO> itemVOs = items.stream().map(item -> OrderItemVO.builder()
+        List<OrderItemVO> itemVOs = items.stream().map(item -> {
+            Product product = productMap.get(item.getProductId());
+            return OrderItemVO.builder()
                 .id(item.getId())
                 .productId(item.getProductId())
-                .productName(productMap.get(item.getProductId()) != null ? productMap.get(item.getProductId()).getName() : "未知商品")
+                .productName(OrderItemDisplay.productName(item, product))
                 .orderQty(item.getOrderQty())
                 .actualQty(item.getActualQty())
                 .unit(item.getUnit())
@@ -1216,9 +1304,19 @@ public class OrderService {
                 .subtotalAmount(item.getSubtotalAmount())
                 .shortageFlag(item.getShortageFlag())
                 .pickRemark(item.getPickRemark())
-                .build()).toList();
+                .stockQty(product != null && product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO)
+                .build();
+        }).toList();
 
         int pickedItemCount = (int) items.stream().filter(OrderService::isItemPicked).count();
+
+        String pickedByWorkerCode = null;
+        if (order.getPickedByWorkerId() != null) {
+            Worker picker = workerMapper.selectById(order.getPickedByWorkerId());
+            if (picker != null) {
+                pickedByWorkerCode = picker.getWorkerCode();
+            }
+        }
 
         return OrderVO.builder()
                 .id(order.getId())
@@ -1227,10 +1325,9 @@ public class OrderService {
                 .customerName(displayName)
                 .source(order.getSource())
                 .status(order.getStatus())
-                .statusLabel(statusLabel(order.getStatus()))
-                .deliveryDate(order.getDeliveryDate())
-                .deliveryAddress(order.getDeliveryAddress())
+                .statusLabel(OrderFlowStatus.flowStatusLabel(order, order.getAmount() == null || isPriceIncomplete(items), pickedItemCount, itemVOs.size()))
                 .deliveryAddressShort(order.getDeliveryAddressShort())
+                .deliveryDate(order.getDeliveryDate())
                 .contactName(order.getContactName())
                 .contactPhone(order.getContactPhone())
                 .amount(order.getAmount())
@@ -1246,6 +1343,7 @@ public class OrderService {
                 .pickedItemCount(pickedItemCount)
                 .printed(order.getPrintedAt() != null)
                 .statementImageUrl(order.getStatementImageUrl())
+                .pickedByWorkerCode(pickedByWorkerCode)
                 .build();
     }
 
@@ -1259,9 +1357,8 @@ public class OrderService {
                 .source(order.getSource())
                 .sourceLabel(sourceLabel(order.getSource()))
                 .status(order.getStatus())
-                .statusLabel(statusLabel(order.getStatus()))
+                .statusLabel(OrderFlowStatus.flowStatusLabel(order, priceIncomplete, pickedItemCount, itemCount))
                 .deliveryDate(order.getDeliveryDate())
-                .deliveryAddressShort(order.getDeliveryAddressShort())
                 .contactName(order.getContactName())
                 .amount(order.getAmount())
                 .paidAmount(order.getPaidAmount())
@@ -1314,22 +1411,61 @@ public class OrderService {
         return order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
     }
 
-    private String statusLabel(String status) {
-        if (status == null) {
-            return "未知";
+    private void insertCustomOrderItem(Long orderId, OrderItemCreateRequest itemReq) {
+        String customName = itemReq.getCustomName().trim();
+        if (!StringUtils.hasText(customName)) {
+            throw BusinessException.of(400, "请填写自定义商品名称");
         }
-        return switch (status) {
-            case OrderStatus.PENDING_CONFIRM -> "待确认";
-            case OrderStatus.PENDING_PICK -> "待分拣";
-            case OrderStatus.PICKING -> "分拣中";
-            case OrderStatus.PICKED -> "已拣完";
-            case OrderStatus.DELIVERING -> "配送中";
-            case OrderStatus.DELIVERED -> "已送达";
-            case OrderStatus.PENDING_PRICE -> "待录价";
-            case OrderStatus.PRICED -> "已录价";
-            case OrderStatus.COMPLETED -> "已完成";
-            default -> status;
-        };
+        Product placeholder = productService.getOrCreateCustomOrderProduct();
+        OrderItem item = new OrderItem();
+        item.setOrderId(orderId);
+        item.setProductId(placeholder.getId());
+        item.setOriginalText(customName);
+        item.setOrderQty(itemReq.getOrderQty());
+        item.setUnit(resolveCustomItemUnit(placeholder, itemReq.getUnit()));
+        if (StringUtils.hasText(itemReq.getPickRemark())) {
+            item.setPickRemark(itemReq.getPickRemark().trim());
+        }
+        item.setShortageFlag(0);
+        orderItemMapper.insert(item);
+    }
+
+    private String resolveCustomItemUnit(Product placeholder, String requestedUnit) {
+        if (StringUtils.hasText(requestedUnit)) {
+            return requestedUnit.trim();
+        }
+        return StringUtils.hasText(placeholder.getUnit()) ? placeholder.getUnit() : "斤";
+    }
+
+    private Map<Long, Product> loadCatalogProducts(List<OrderItemCreateRequest> items) {
+        Set<Long> productIds = items.stream()
+                .filter(item -> !StringUtils.hasText(item.getCustomName()))
+                .map(OrderItemCreateRequest::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .in(Product::getId, productIds)
+                .eq(Product::getMerchantId, merchantContext.currentMerchantId())
+                .eq(Product::getSaleStatus, "ON")
+                .ne(Product::getName, ProductService.CUSTOM_ORDER_PRODUCT_NAME));
+        Map<Long, Product> productMap = products.stream().collect(Collectors.toMap(Product::getId, p -> p));
+
+        List<String> missing = new ArrayList<>();
+        for (OrderItemCreateRequest item : items) {
+            if (StringUtils.hasText(item.getCustomName())) {
+                continue;
+            }
+            if (item.getProductId() == null || !productMap.containsKey(item.getProductId())) {
+                missing.add(item.getProductId() != null ? String.valueOf(item.getProductId()) : "未知");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw BusinessException.of(400, "以下商品不可下单或已下架: " + String.join(",", missing));
+        }
+        return productMap;
     }
 
     private Map<Long, Product> loadProducts(List<OrderItemCreateRequest> items) {
@@ -1438,7 +1574,16 @@ public class OrderService {
     private OrderVO maskPriceForCustomer(OrderVO vo) {
         boolean priceVisible = OrderStatus.COMPLETED.equals(vo.getStatus())
                 || Boolean.TRUE.equals(vo.getPrinted());
-        vo.setStatusLabel(customerStatusLabel(vo.getStatus(), vo.getPrinted()));
+        int stage = OrderFlowStatus.resolveStageIndex(
+                vo.getStatus(),
+                Boolean.TRUE.equals(vo.getPrinted()),
+                vo.getAmount(),
+                vo.getPriceIncomplete(),
+                vo.getPaidAmount(),
+                vo.getReceivableAmount(),
+                vo.getPickedItemCount(),
+                vo.getItemCount());
+        vo.setStatusLabel(OrderFlowStatus.customerStatusLabel(stage));
         if (!priceVisible) {
             vo.setAmount(null);
             vo.setReceivableAmount(null);
@@ -1452,26 +1597,6 @@ public class OrderService {
             }
         }
         return vo;
-    }
-
-    private String customerStatusLabel(String status, Boolean printed) {
-        if (Boolean.TRUE.equals(printed)
-                && !OrderStatus.COMPLETED.equals(status)
-                && !OrderStatus.CANCELLED.equals(status)) {
-            return "已对账";
-        }
-        if (status == null) {
-            return "处理中";
-        }
-        return switch (status) {
-            case OrderStatus.PENDING_CONFIRM -> "待商家确认";
-            case OrderStatus.PENDING_PICK, OrderStatus.PICKING -> "备货中";
-            case OrderStatus.PICKED, OrderStatus.DELIVERING, OrderStatus.DELIVERED -> "配送中";
-            case OrderStatus.PENDING_PRICE, OrderStatus.PRICED -> "待确认账单";
-            case OrderStatus.COMPLETED -> "已完成";
-            case OrderStatus.CANCELLED -> "已取消";
-            default -> "处理中";
-        };
     }
 
     private String generateOrderNo() {

@@ -16,6 +16,12 @@ public class AppProperties {
     private Admin admin = new Admin();
     private Customer customer = new Customer();
     private Wechat wechat = new Wechat();
+    private Mq mq = new Mq();
+
+    @Data
+    public static class Mq {
+        private boolean enabled = true;
+    }
 
     @Data
     public static class Merchant {

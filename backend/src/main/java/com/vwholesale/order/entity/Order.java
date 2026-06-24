@@ -28,6 +28,7 @@ public class Order {
     private String contactName;
     private String contactPhone;
     private Long assignedWorkerId;
+    private Long pickedByWorkerId;
     private BigDecimal amount;
     private BigDecimal paidAmount;
     private BigDecimal receivableAmount;

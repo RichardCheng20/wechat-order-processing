@@ -12,4 +12,4 @@ INSERT INTO products (merchant_id, category_id, name, aliases, unit, default_pri
 (1, 7, '金针菇', NULL, '包', 5.00, 'ON');
 
 INSERT INTO product_prices (merchant_id, product_id, customer_id, price, effective_date, status)
-SELECT 1, id, NULL, default_price, CURDATE(), 1 FROM products WHERE merchant_id = 1;
+SELECT 1, id, 0, default_price, CURDATE(), 1 FROM products WHERE merchant_id = 1;

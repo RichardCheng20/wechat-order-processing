@@ -39,6 +39,14 @@ public class BossProcurementController {
         return ApiResponse.ok(procurementTaskService.listTasks(receiveDate, keyword, categoryId));
     }
 
+    @Operation(summary = "代采商品采购详情")
+    @GetMapping("/custom-items")
+    public ApiResponse<ProcurementProductDetailVO> customItemDetail(
+            @RequestParam String customName,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate receiveDate) {
+        return ApiResponse.ok(procurementTaskService.getCustomItemDetail(customName, receiveDate));
+    }
+
     @Operation(summary = "商品采购详情")
     @GetMapping("/products/{productId}")
     public ApiResponse<ProcurementProductDetailVO> productDetail(

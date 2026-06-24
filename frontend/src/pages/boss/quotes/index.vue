@@ -43,9 +43,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchCustomerQuoteSummaries, type CustomerQuoteSummary } from '../../../api/quote'
-import AppIcon from '../../../components/AppIcon.vue'
-import { useUserStore } from '../../../stores/user'
+import { fetchCustomerQuoteSummaries, type CustomerQuoteSummary } from '@common/api/quote'
+import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -54,7 +54,7 @@ const customers = ref<CustomerQuoteSummary[]>([])
 
 onShow(() => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   loadData()

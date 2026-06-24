@@ -49,9 +49,9 @@ import {
   fetchBossCategories,
   sortBossCategories,
   type CategoryItem,
-} from '../../../../../api/product'
-import AppIcon from '../../../../../components/AppIcon.vue'
-import { useUserStore } from '../../../../../stores/user'
+} from '@common/api/product'
+import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const parentId = ref<number | null>(null)
@@ -77,7 +77,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   uni.setNavigationBarTitle({

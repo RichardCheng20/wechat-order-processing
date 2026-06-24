@@ -75,9 +75,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { createBossCustomer, fetchBossCustomers, type CustomerItem } from '../../../api/customer'
-import { useSalesOrderStore } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
+import { createBossCustomer, fetchBossCustomers, type CustomerItem } from '@common/api/customer'
+import { useSalesOrderStore } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -112,7 +112,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadCustomers()

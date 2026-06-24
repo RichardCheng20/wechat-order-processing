@@ -42,4 +42,6 @@ public class OrderVO {
     private BigDecimal customerOutstandingAmount;
     private Long assignedWorkerId;
     private String assignedWorkerName;
+    /** 拣单配送员编号（不展示姓名） */
+    private String pickedByWorkerCode;
 }

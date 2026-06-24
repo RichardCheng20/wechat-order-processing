@@ -11,6 +11,23 @@ spring:
       host: 127.0.0.1
       port: 6379
       database: 0
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    username: vwholesale
+    password: vwholesale
+    publisher-confirm-type: correlated
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+          multiplier: 2
+          max-interval: 30s
   flyway:
     enabled: true
     locations: classpath:db/migration

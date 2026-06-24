@@ -2,6 +2,7 @@ package com.vwholesale.product.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.vwholesale.common.context.MerchantContext;
+import com.vwholesale.product.ProductPriceConstants;
 import com.vwholesale.product.entity.ProductPriceRecord;
 import com.vwholesale.product.mapper.ProductPriceMapper;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,7 @@ public class ProductPriceService {
     public BigDecimal resolveReferencePrice(Long productId, Long customerId, BigDecimal defaultPrice, LocalDate date) {
         Long merchantId = merchantContext.currentMerchantId();
 
-        if (customerId != null) {
+        if (customerId != null && !ProductPriceConstants.isBasePriceCustomer(customerId)) {
             ProductPriceRecord customerPrice = productPriceMapper.selectOne(
                     new LambdaQueryWrapper<ProductPriceRecord>()
                             .eq(ProductPriceRecord::getMerchantId, merchantId)
@@ -47,7 +48,7 @@ public class ProductPriceService {
                 new LambdaQueryWrapper<ProductPriceRecord>()
                         .eq(ProductPriceRecord::getMerchantId, merchantId)
                         .eq(ProductPriceRecord::getProductId, productId)
-                        .isNull(ProductPriceRecord::getCustomerId)
+                        .eq(ProductPriceRecord::getCustomerId, ProductPriceConstants.BASE_PRICE_CUSTOMER_ID)
                         .eq(ProductPriceRecord::getEffectiveDate, date)
                         .eq(ProductPriceRecord::getStatus, 1)
                         .last("LIMIT 1")
@@ -67,7 +68,7 @@ public class ProductPriceService {
         Long merchantId = merchantContext.currentMerchantId();
         Map<Long, BigDecimal> result = new HashMap<>();
 
-        if (customerId != null) {
+        if (customerId != null && !ProductPriceConstants.isBasePriceCustomer(customerId)) {
             List<ProductPriceRecord> customerPrices = productPriceMapper.selectList(
                     new LambdaQueryWrapper<ProductPriceRecord>()
                             .eq(ProductPriceRecord::getMerchantId, merchantId)
@@ -90,7 +91,7 @@ public class ProductPriceService {
                     new LambdaQueryWrapper<ProductPriceRecord>()
                             .eq(ProductPriceRecord::getMerchantId, merchantId)
                             .in(ProductPriceRecord::getProductId, missing)
-                            .isNull(ProductPriceRecord::getCustomerId)
+                            .eq(ProductPriceRecord::getCustomerId, ProductPriceConstants.BASE_PRICE_CUSTOMER_ID)
                             .eq(ProductPriceRecord::getEffectiveDate, date)
                             .eq(ProductPriceRecord::getStatus, 1)
             );
@@ -115,7 +116,7 @@ public class ProductPriceService {
                 new LambdaQueryWrapper<ProductPriceRecord>()
                         .eq(ProductPriceRecord::getMerchantId, merchantId)
                         .in(ProductPriceRecord::getProductId, productIds)
-                        .isNull(ProductPriceRecord::getCustomerId)
+                        .eq(ProductPriceRecord::getCustomerId, ProductPriceConstants.BASE_PRICE_CUSTOMER_ID)
                         .eq(ProductPriceRecord::getEffectiveDate, date)
                         .eq(ProductPriceRecord::getStatus, 1)
         );
@@ -141,7 +142,7 @@ public class ProductPriceService {
                 new LambdaQueryWrapper<ProductPriceRecord>()
                         .eq(ProductPriceRecord::getMerchantId, merchantId)
                         .eq(ProductPriceRecord::getProductId, productId)
-                        .isNull(ProductPriceRecord::getCustomerId)
+                        .eq(ProductPriceRecord::getCustomerId, ProductPriceConstants.BASE_PRICE_CUSTOMER_ID)
                         .eq(ProductPriceRecord::getEffectiveDate, date)
                         .last("LIMIT 1")
         );
@@ -154,6 +155,7 @@ public class ProductPriceService {
         ProductPriceRecord record = new ProductPriceRecord();
         record.setMerchantId(merchantId);
         record.setProductId(productId);
+        record.setCustomerId(ProductPriceConstants.BASE_PRICE_CUSTOMER_ID);
         record.setPrice(price);
         record.setEffectiveDate(date);
         record.setStatus(1);
@@ -162,6 +164,10 @@ public class ProductPriceService {
 
     public void upsertCustomerPrice(Long customerId, Long productId, BigDecimal price, LocalDate date) {
         if (customerId == null || productId == null || price == null) {
+            return;
+        }
+        if (ProductPriceConstants.isBasePriceCustomer(customerId)) {
+            upsertDailyBasePrice(productId, price, date);
             return;
         }
         Long merchantId = merchantContext.currentMerchantId();
@@ -190,7 +196,7 @@ public class ProductPriceService {
     }
 
     public void removeCustomerPrice(Long customerId, Long productId) {
-        if (customerId == null || productId == null) {
+        if (customerId == null || productId == null || ProductPriceConstants.isBasePriceCustomer(customerId)) {
             return;
         }
         Long merchantId = merchantContext.currentMerchantId();
@@ -201,7 +207,8 @@ public class ProductPriceService {
     }
 
     public Map<Long, BigDecimal> batchLatestCustomerPrices(Long customerId, List<Long> productIds, LocalDate asOfDate) {
-        if (customerId == null || productIds == null || productIds.isEmpty()) {
+        if (customerId == null || productIds == null || productIds.isEmpty()
+                || ProductPriceConstants.isBasePriceCustomer(customerId)) {
             return Map.of();
         }
         Long merchantId = merchantContext.currentMerchantId();
@@ -212,7 +219,7 @@ public class ProductPriceService {
         List<ProductPriceRecord> records = productPriceMapper.selectList(
                 new LambdaQueryWrapper<ProductPriceRecord>()
                         .eq(ProductPriceRecord::getMerchantId, merchantId)
-                        .isNotNull(ProductPriceRecord::getCustomerId)
+                        .ne(ProductPriceRecord::getCustomerId, ProductPriceConstants.BASE_PRICE_CUSTOMER_ID)
                         .eq(ProductPriceRecord::getStatus, 1)
         );
         Map<Long, java.util.Set<Long>> grouped = new HashMap<>();
@@ -221,7 +228,7 @@ public class ProductPriceService {
                     .add(record.getProductId());
         }
         Map<Long, Integer> result = new HashMap<>();
-        grouped.forEach((customerId, productIds) -> result.put(customerId, productIds.size()));
+        grouped.forEach((cid, productIds) -> result.put(cid, productIds.size()));
         return result;
     }
 

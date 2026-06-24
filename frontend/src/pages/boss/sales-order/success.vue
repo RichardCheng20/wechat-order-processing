@@ -27,9 +27,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { useSalesOrderStore } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
-import { syncQuoteFromOrder } from '../../../api/quote'
+import { useSalesOrderStore } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
+import { syncQuoteFromOrder } from '@common/api/quote'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -38,7 +38,7 @@ const customerName = ref('')
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   orderId.value = Number(query?.id || 0)

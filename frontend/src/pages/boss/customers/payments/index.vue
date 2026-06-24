@@ -37,8 +37,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { fetchBossPayments, type PaymentInfo } from '../../../../api/payment'
-import { useUserStore } from '../../../../stores/user'
+import { fetchBossPayments, type PaymentInfo } from '@common/api/payment'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const customerId = ref(0)
@@ -51,7 +51,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadPayments()

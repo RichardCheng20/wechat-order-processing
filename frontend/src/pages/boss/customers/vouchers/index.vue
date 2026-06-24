@@ -36,15 +36,15 @@
           <view class="card-body">
             <view class="card-head">
               <text class="order-no">{{ item.orderNo }}</text>
-              <text class="pay-status">{{ settlementLabel(item) }}</text>
+              <text class="pay-status">{{ orderSettlementLabel(item) }}</text>
             </view>
             <text class="time-text">制单: {{ formatCreated(item.createdAt) }}</text>
             <view class="amount-row">
-              <text>应结 {{ formatMoney(item.receivableAmount ?? item.amount) }}元</text>
+              <text>应结 {{ formatOrderMoney(getOrderReceivable(item)) }}元</text>
             </view>
-            <view v-if="getOutstanding(item) > 0" class="debt-row">
+            <view v-if="getOrderOutstanding(item) > 0" class="debt-row">
               <text>待结</text>
-              <text class="debt-value">{{ formatMoney(getOutstanding(item)) }}元</text>
+              <text class="debt-value">{{ formatOrderMoney(getOrderOutstanding(item)) }}元</text>
             </view>
           </view>
         </view>
@@ -54,7 +54,7 @@
 
     <view class="bottom-bar">
       <view class="total-bar">
-        <text>合计应结: {{ formatMoney(totalOutstanding) }}元</text>
+        <text>合计应结: {{ formatOrderMoney(totalOutstanding) }}元</text>
       </view>
       <view class="bottom-actions">
         <view class="action-item" @tap="batchSettle">
@@ -89,15 +89,22 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { fetchBossOrders, type OrderInfo } from '../../../../api/order'
-import AppIcon from '../../../../components/AppIcon.vue'
+import { fetchBossOrders, type OrderInfo } from '@common/api/order'
+import { fetchBossCustomerDetail } from '@common/api/customer'
+import AppIcon from '@/components/AppIcon.vue'
 import {
   formatShortDate,
   getLastMonthsRange,
   getThisMonthRange,
   isThisMonthRange,
-} from '../../../../utils/date-range'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/utils/date-range'
+import {
+  formatOrderMoney,
+  getOrderOutstanding,
+  getOrderReceivable,
+  orderSettlementLabel,
+} from '@common/utils/order-settlement'
+import { useUserStore } from '@common/stores/user'
 
 type PaymentTab = 'ALL' | 'PENDING' | 'PARTIAL' | 'SETTLED'
 
@@ -120,7 +127,7 @@ const tabs = [
   { label: '全部', value: 'ALL' as const },
   { label: '待结款', value: 'PENDING' as const },
   { label: '部分结款', value: 'PARTIAL' as const },
-  { label: '已结款', value: 'SETTLED' as const },
+  { label: '已结清', value: 'SETTLED' as const },
 ]
 
 const rangeLabel = computed(() => {
@@ -136,7 +143,7 @@ const totalOutstanding = computed(() => {
   const list = selectedIds.value.length
     ? orders.value.filter((item) => selectedIds.value.includes(item.id))
     : orders.value
-  return list.reduce((sum, item) => sum + getOutstanding(item), 0)
+  return list.reduce((sum, item) => sum + getOrderOutstanding(item), 0)
 })
 
 onLoad((query) => {
@@ -148,11 +155,25 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
+  await syncCustomerName()
   await loadOrders()
 })
+
+async function syncCustomerName() {
+  if (!customerId.value) return
+  try {
+    const detail = await fetchBossCustomerDetail(customerId.value)
+    customerName.value = detail.name
+    uni.setNavigationBarTitle({ title: `${detail.name} · 结款` })
+  } catch {
+    if (customerName.value) {
+      uni.setNavigationBarTitle({ title: `${customerName.value} · 结款` })
+    }
+  }
+}
 
 async function loadOrders() {
   if (!customerId.value) return
@@ -207,23 +228,15 @@ function applyDateRange() {
   loadOrders()
 }
 
-function getOutstanding(item: OrderInfo) {
-  if (item.outstandingAmount != null) return Number(item.outstandingAmount)
-  const receivable = Number(item.receivableAmount ?? item.amount ?? 0)
-  const paid = Number(item.paidAmount ?? 0)
-  return Math.max(receivable - paid, 0)
-}
-
-function settlementLabel(item: OrderInfo) {
-  const outstanding = getOutstanding(item)
-  const paid = Number(item.paidAmount ?? 0)
-  if (outstanding <= 0) return '已结款'
-  if (paid > 0) return '部分结款'
-  return '待结款'
-}
-
-function formatMoney(value?: number) {
-  return Number(value || 0).toFixed(0)
+function toggleSelect(id: number) {
+  const item = orders.value.find((o) => o.id === id)
+  if (!item || getOrderOutstanding(item) <= 0) return
+  const idx = selectedIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedIds.value.splice(idx, 1)
+  } else {
+    selectedIds.value.push(id)
+  }
 }
 
 function formatCreated(value?: string) {
@@ -235,25 +248,14 @@ function formatCreated(value?: string) {
   return `${m}-${day}`
 }
 
-function toggleSelect(id: number) {
-  const item = orders.value.find((o) => o.id === id)
-  if (!item || getOutstanding(item) <= 0) return
-  const idx = selectedIds.value.indexOf(id)
-  if (idx >= 0) {
-    selectedIds.value.splice(idx, 1)
-  } else {
-    selectedIds.value.push(id)
-  }
-}
-
 function batchSettle() {
   const selected = orders.value.filter((item) => selectedIds.value.includes(item.id))
-  const list = selected.length ? selected : orders.value.filter((item) => getOutstanding(item) > 0)
+  const list = selected.length ? selected : orders.value.filter((item) => getOrderOutstanding(item) > 0)
   if (list.length === 0) {
     uni.showToast({ title: '暂无待结订单', icon: 'none' })
     return
   }
-  const total = list.reduce((sum, item) => sum + getOutstanding(item), 0)
+  const total = list.reduce((sum, item) => sum + getOrderOutstanding(item), 0)
   const name = encodeURIComponent(customerName.value)
   uni.navigateTo({
     url: `/pages/boss/sales-payment/index?customerId=${customerId.value}&customerName=${name}&amount=${total.toFixed(2)}`,

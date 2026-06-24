@@ -204,7 +204,7 @@ import {
   mergeUnits,
   normalizeUnit,
   parseSaleUnits,
-} from '../../../constants/units'
+} from '@common/constants/units'
 import {
   createBossCategory,
   createBossProduct,
@@ -213,11 +213,11 @@ import {
   updateBossProduct,
   type CategoryItem,
   type ProductItem,
-} from '../../../api/product'
-import { uploadPaymentVoucher } from '../../../api/payment'
-import { getCategoryDisplayName, getLeafCategories } from '../../../utils/category'
-import { resolveMediaUrl } from '../../../utils/media'
-import { useUserStore } from '../../../stores/user'
+} from '@common/api/product'
+import { uploadPaymentVoucher } from '@common/api/payment'
+import { getCategoryDisplayName, getLeafCategories } from '@common/utils/category'
+import { resolveMediaUrl } from '@common/utils/media'
+import { useUserStore } from '@common/stores/user'
 
 type UnitPickerMode = 'basic' | 'auxiliary' | 'add-aux'
 
@@ -272,7 +272,7 @@ const saleUnits = computed(() => {
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (query?.id) {

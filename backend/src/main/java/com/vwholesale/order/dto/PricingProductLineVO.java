@@ -20,7 +20,10 @@ public class PricingProductLineVO {
     private String pickRemark;
     private BigDecimal quantity;
     private String unit;
+    private Boolean customItem;
+    private String customName;
     private BigDecimal referencePrice;
+    private BigDecimal costPrice;
     private BigDecimal dealPrice;
     private Boolean priced;
 }

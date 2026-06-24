@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
 public class CustomerVO {
 
     private Long id;
+    /** 业务编号 yyyymmdd001 */
+    private String customerNo;
     private String name;
     private String contactName;
     private String phone;

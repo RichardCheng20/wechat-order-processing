@@ -67,8 +67,8 @@
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app'
 import { reactive, ref } from 'vue'
-import { fetchBossProfile, updateBossProfile } from '../../../api/profile'
-import { useUserStore } from '../../../stores/user'
+import { fetchBossProfile, updateBossProfile } from '@common/api/profile'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const saving = ref(false)
@@ -83,7 +83,7 @@ const form = reactive({
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadProfile()

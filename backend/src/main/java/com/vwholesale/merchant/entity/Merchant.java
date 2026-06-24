@@ -18,6 +18,9 @@ public class Merchant {
     private String phone;
     private String region;
     private Integer status;
+    /** 档口开通码，首个微信认领主管理员 */
+    private String onboardingToken;
+    private Long ownerUserId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

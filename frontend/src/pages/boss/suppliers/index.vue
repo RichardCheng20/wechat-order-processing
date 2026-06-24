@@ -13,13 +13,13 @@
 
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app'
-import { useUserStore } from '../../../stores/user'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 
 onShow(() => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
   }
 })
 

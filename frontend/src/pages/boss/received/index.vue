@@ -29,9 +29,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchBossDashboard } from '../../../api/dashboard'
-import { fetchBossPayments, type PaymentInfo } from '../../../api/payment'
-import { useUserStore } from '../../../stores/user'
+import { fetchBossDashboard } from '@common/api/dashboard'
+import { fetchBossPayments, type PaymentInfo } from '@common/api/payment'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const payments = ref<PaymentInfo[]>([])
@@ -47,7 +47,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   loading.value = true

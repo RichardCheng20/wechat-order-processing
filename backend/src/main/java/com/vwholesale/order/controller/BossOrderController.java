@@ -41,6 +41,12 @@ public class BossOrderController {
         return ApiResponse.ok(orderService.bossSummary());
     }
 
+    @Operation(summary = "待确认订单数量")
+    @GetMapping("/orders/pending-confirm-count")
+    public ApiResponse<Map<String, Long>> pendingConfirmCount() {
+        return ApiResponse.ok(Map.of("count", orderService.countPendingConfirmOrders()));
+    }
+
     @Operation(summary = "经营数据统计")
     @GetMapping("/dashboard")
     public ApiResponse<BossDashboardVO> dashboard() {
@@ -53,6 +59,7 @@ public class BossOrderController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Boolean pricingPending,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String keywordType,
             @RequestParam(required = false) String pickFilter,
             @RequestParam(required = false) String dateType,
             @RequestParam(required = false) LocalDate dateFrom,
@@ -62,7 +69,7 @@ public class BossOrderController {
             @RequestParam(required = false) Long customerId,
             @RequestParam(required = false) String paymentFilter,
             @RequestParam(required = false) Boolean receivableOnly) {
-        return ApiResponse.ok(orderService.listForBoss(status, pricingPending, keyword, pickFilter,
+        return ApiResponse.ok(orderService.listForBoss(status, pricingPending, keyword, keywordType, pickFilter,
                 dateType, dateFrom, dateTo, deliveryFrom, deliveryTo, customerId, paymentFilter, receivableOnly));
     }
 

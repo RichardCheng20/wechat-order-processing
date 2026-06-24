@@ -14,6 +14,7 @@ public class Customer {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private String customerNo;
     private Long merchantId;
     private String name;
     private String contactName;

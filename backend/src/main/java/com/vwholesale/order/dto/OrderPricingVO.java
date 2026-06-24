@@ -23,5 +23,6 @@ public class OrderPricingVO {
     private BigDecimal amount;
     private String remark;
     private LocalDateTime createdAt;
+    private Integer customItemCount;
     private List<OrderPricingItemVO> items;
 }

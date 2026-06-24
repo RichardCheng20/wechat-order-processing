@@ -10,6 +10,8 @@ import java.math.BigDecimal;
 public class PricingProductSummaryVO {
 
     private Long productId;
+    private Boolean customItem;
+    private String customName;
     private String productName;
     private String unit;
     private Integer pendingCount;

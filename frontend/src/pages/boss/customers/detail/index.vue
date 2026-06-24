@@ -8,12 +8,12 @@
       <view class="stats-card">
         <view class="stat-item">
           <text class="stat-label">销售总额</text>
-          <text class="stat-value">¥ {{ formatMoney(customer.totalSalesAmount) }}</text>
+          <text class="stat-value">¥ {{ formatOrderMoney(customer.totalSalesAmount) }}</text>
         </view>
         <view class="stat-divider" />
         <view class="stat-item">
           <text class="stat-label">总欠款</text>
-          <text class="stat-value debt">¥ {{ formatMoney(customer.outstandingAmount) }}</text>
+          <text class="stat-value debt">¥ {{ formatOrderMoney(customer.outstandingAmount) }}</text>
         </view>
       </view>
 
@@ -33,6 +33,10 @@
       </view>
 
       <view class="settings-card">
+        <view class="setting-row">
+          <text class="setting-label">客户编号</text>
+          <text class="setting-value">{{ customer.customerNo || customer.id }}</text>
+        </view>
         <view class="setting-row">
           <text class="setting-label">结款方式</text>
           <text class="setting-value">{{ settlementLabel(customer.settlementType) }}</text>
@@ -104,10 +108,11 @@ import {
   fetchBossCustomerDetail,
   updateBossCustomer,
   type CustomerItem,
-} from '../../../../api/customer'
-import AppIcon from '../../../../components/AppIcon.vue'
-import { useSalesOrderStore } from '../../../../stores/salesOrder'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/customer'
+import AppIcon from '@/components/AppIcon.vue'
+import { useSalesOrderStore } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
+import { formatOrderMoney } from '@common/utils/order-settlement'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -133,7 +138,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadDetail()
@@ -173,10 +178,6 @@ function settlementLabel(type?: string) {
     CREDIT: '先货后款',
   }
   return type ? (map[type] || type) : '现结'
-}
-
-function formatMoney(value?: number) {
-  return Number(value || 0).toFixed(2)
 }
 
 function goOrderReconcile() {

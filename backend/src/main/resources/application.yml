@@ -42,6 +42,8 @@ knife4j:
     language: zh_cn
 
 app:
+  mq:
+    enabled: ${MQ_ENABLED:true}
   merchant:
     default-id: 1
   admin:

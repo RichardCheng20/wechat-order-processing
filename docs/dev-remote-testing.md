@@ -1,0 +1,186 @@
+# 开发联调与生产部署指南
+
+> 适用：已有轻量服务器后端（`vwholesale` / `119.29.184.221`），备案未完成前也可联调。  
+> 相关：[上线分步指南](./tencent-cloud-deployment-walkthrough.md) · [一键部署脚本](../scripts/deploy-prod.sh)
+
+---
+
+## 一、日常开发流程（测云服务器）
+
+代码改完、要验证**生产环境**上的后端时：
+
+```text
+1. 本地改代码
+2. ./scripts/deploy-prod.sh
+3. ssh -L 8080:127.0.0.1:8080 vwholesale   ← 另开终端，保持不关
+4. cd frontend && npm run dev:mp-weixin      ← 微信开发者工具打开 dist/dev/mp-weixin
+5. API_BASE=http://127.0.0.1:8080 ./scripts/smoke-api.sh   ← 可选
+```
+
+### 前提
+
+- 本机已配置 `ssh vwholesale`（见 [walkthrough 3.1](./tencent-cloud-deployment-walkthrough.md#31-ssh-登录推荐密钥长期方便)）
+- 微信开发者工具 → 详情 → 本地设置 → 勾选 **「不校验合法域名、web-view、TLS 版本」**
+
+### 原理
+
+SSH 隧道把本机 `127.0.0.1:8080` 转发到服务器内网 `8080`。  
+小程序开发者工具默认 API 就是 `http://127.0.0.1:8080`，**无需改前端配置**。
+
+---
+
+## 二、切换：云服务器 ↔ 本机 Mac
+
+小程序 API 地址通常都是 `127.0.0.1:8080`，差别在于 **8080 背后是谁**。
+
+| | 测云服务器（远程） | 测本机 Mac |
+|--|-------------------|------------|
+| SSH 隧道 | **开着** `ssh -L 8080:127.0.0.1:8080 vwholesale` | **关掉**（Ctrl+C） |
+| 后端进程 | 服务器 `systemctl` 跑 | 本机 `mvn spring-boot:run` |
+| 部署 | 需要 `./scripts/deploy-prod.sh` | 不需要 |
+| 小程序 API | `127.0.0.1:8080` | `127.0.0.1:8080` |
+
+### 切回本机 Mac 的步骤
+
+1. **关掉隧道**：在 `ssh -L` 终端按 Ctrl+C，或：
+
+   ```bash
+   lsof -i :8080          # 找到 ssh 进程 PID
+   kill <PID>
+   ```
+
+2. **启动本机后端**：
+
+   ```bash
+   source backend/scripts/dev-env.sh   # 若需
+   cd backend && mvn spring-boot:run
+   ```
+
+3. **验证**：
+
+   ```bash
+   curl http://127.0.0.1:8080/api/health
+   ```
+
+4. **登录页**：若曾填过「后端 IP」，**留空**并失焦保存；开发者工具下默认仍是 `127.0.0.1:8080`。
+
+### 注意：不要同时占 8080
+
+- 测远程：开隧道，**本机不要** `mvn spring-boot:run`
+- 测本机：关隧道，**只**跑本机后端
+
+---
+
+## 三、一键部署脚本
+
+```bash
+./scripts/deploy-prod.sh                  # 打包 + 上传 JAR + 重启 + health 检查
+./scripts/deploy-prod.sh --product-images # 额外同步 backend/uploads/products/
+./scripts/deploy-prod.sh --no-build       # 跳过 mvn，只上传已有 JAR
+./scripts/deploy-prod.sh --check          # 仅远程 health 检查
+```
+
+| 命令 | 说明 |
+|------|------|
+| 默认 | 只更新 `app.jar`，**不动** uploads |
+| `--product-images` | 只同步商品图目录，不删远端其它文件 |
+| ~~`--uploads`~~ | 已弃用，会提示改用 `--product-images` |
+
+可选配置：复制 `scripts/deploy-prod.env.example` → `scripts/deploy-prod.env` 覆盖 SSH 别名等。
+
+### 清理临时测试图
+
+```bash
+./scripts/clean-upload-temp.sh           # 本机 backend/uploads/ 根目录 UUID 图
+./scripts/clean-upload-temp.sh --remote  # 生产服务器（有真实凭证后慎用）
+```
+
+---
+
+## 四、备案期间还能怎么测
+
+| 方式 | 适用 | 说明 |
+|------|------|------|
+| 开发者工具 + 隧道 | **推荐** | 不依赖备案/HTTPS |
+| `./scripts/smoke-api.sh` | API 回归 | 需先开隧道 |
+| SSH 上 `curl` | 查部署/日志 | `sudo journalctl -u vwholesale -f` |
+| 真机预览 | 较麻烦 | 需临时开防火墙 8080 或等 HTTPS；优先用开发者工具 |
+| 体验版/正式版 | ❌ | 必须备案 + `https://api.52laicai.cn` + 合法域名 |
+
+### 开发者工具联调
+
+1. 隧道：`ssh -L 8080:127.0.0.1:8080 vwholesale`
+2. `npm run dev:mp-weixin`
+3. 登录页用 **dev 快捷登录**（老板/客户等）
+4. 勾选「不校验合法域名」
+
+### 服务器上直接测
+
+```bash
+ssh vwholesale
+curl -s http://127.0.0.1:8080/api/health
+
+curl -s -X POST http://127.0.0.1:8080/api/auth/dev-login \
+  -H 'Content-Type: application/json' \
+  -d '{"openid":"dev-owner-001","nickname":"老板","role":"OWNER_ADMIN"}'
+```
+
+---
+
+## 五、生产库数据（可选）
+
+生产库若为 Flyway 空库，与本地 rich 数据不一致。需要时可从本地导入：
+
+```bash
+# 本机导出（本地 Docker MySQL 运行时）
+docker exec vwholesale-mysql mysqldump -uvwholesale -pvwholesale vwholesale \
+  --single-transaction > /tmp/vwholesale-local.sql
+
+scp /tmp/vwholesale-local.sql vwholesale:/tmp/
+ssh vwholesale 'docker exec -i vwholesale-mysql mysql -uroot -proot vwholesale < /tmp/vwholesale-local.sql'
+```
+
+⚠️ 会**覆盖**生产库，执行前确认无重要数据。  
+或只跑种子脚本，如 `backend/scripts/seed-mock-prices.sql`。
+
+---
+
+## 六、真机预览（可选，非必须）
+
+真机不能访问 `127.0.0.1`，且防火墙默认**未开放 8080**。
+
+| 做法 | 说明 |
+|------|------|
+| A. 继续用开发者工具 | 日常足够 |
+| B. 临时开 8080 | 轻量防火墙加 TCP 8080，登录页填 `119.29.184.221`，**测完关闭** |
+| C. 等备案 + HTTPS | 正式给老板/客户试用 |
+
+---
+
+## 七、与正式上线后的区别
+
+| 项目 | 备案中（现在） | 备案通过后 |
+|------|----------------|------------|
+| API | 隧道 `127.0.0.1:8080` 或临时 IP:8080 | `https://api.52laicai.cn` |
+| 合法域名 | 勾选「不校验」 | 微信后台配置 |
+| 体验版/正式版 | 不适合外人 | 可发布 |
+| `dev-login` | 生产仍可用（内测） | **应禁用** |
+
+---
+
+## 八、快速对照
+
+```text
+测云：  隧道 ON  + deploy-prod.sh  + 本机不起 backend
+测 Mac：隧道 OFF + mvn spring-boot:run
+发布：  ./scripts/deploy-prod.sh
+商品图：./scripts/deploy-prod.sh --product-images
+```
+
+---
+
+## 相关文档
+
+- [腾讯云上线分步操作指南](./tencent-cloud-deployment-walkthrough.md)
+- [TODO：上传文件鉴权](./todo-upload-security.md)
+- [后端 README](../backend/README.md)

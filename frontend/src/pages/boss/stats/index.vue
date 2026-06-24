@@ -155,11 +155,12 @@ import {
   fetchBossRevenueStats,
   type BossPaymentStats,
   type BossRevenueStats,
-} from '../../../api/dashboard'
-import AppIcon from '../../../components/AppIcon.vue'
-import OrderDateRangePicker from '../../../components/OrderDateRangePicker.vue'
-import { getLastNDaysRange, formatShortMonthDay } from '../../../utils/date-range'
-import { useUserStore } from '../../../stores/user'
+} from '@common/api/dashboard'
+import AppIcon from '@/components/AppIcon.vue'
+import OrderDateRangePicker from '@/components/OrderDateRangePicker.vue'
+import { getLastNDaysRange, formatShortMonthDay } from '@common/utils/date-range'
+import { useUserStore } from '@common/stores/user'
+import { guardOwnerAdminPage } from '@common/utils/boss-access'
 
 type MainTab = 'summary' | 'payments'
 
@@ -225,10 +226,7 @@ const yTicks = computed(() => {
 })
 
 onShow(async () => {
-  if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
-    return
-  }
+  if (!guardOwnerAdminPage()) return
   if (!dateFrom.value) {
     applyPreset(7)
     return

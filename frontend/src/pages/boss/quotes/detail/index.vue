@@ -23,8 +23,8 @@
       </view>
     </view>
 
-    <view class="main" :style="mainStyle">
-      <scroll-view scroll-y class="categories" :show-scrollbar="false">
+    <view class="main boss-main-fill">
+      <scroll-view scroll-y class="categories boss-side-scroll-fill" :show-scrollbar="false">
         <view
           v-for="item in sidebarItems"
           :key="item.key"
@@ -79,7 +79,7 @@
       </view>
     </view>
 
-    <view class="boss-bottom-bar batch-bar">
+    <view class="boss-bottom-bar boss-bottom-bar--static batch-bar">
       <button class="boss-secondary-btn back-btn" @tap="handleBack">返回</button>
       <button
         class="boss-primary-btn save-btn"
@@ -95,15 +95,15 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
-import { fetchBossCategories, type CategoryItem } from '../../../../api/product'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { fetchBossCategories, type CategoryItem } from '@common/api/product'
 import {
   fetchCustomerQuoteDetail,
   saveCustomerQuote,
   type CustomerQuoteLine,
-} from '../../../../api/quote'
-import { buildPrimarySidebar, matchCategoryFilter } from '../../../../utils/category'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/quote'
+import { buildPrimarySidebar, matchCategoryFilter } from '@common/utils/category'
+import { useUserStore } from '@common/stores/user'
 
 type UniInputEvent = Event & { detail?: { value?: string } }
 
@@ -119,15 +119,13 @@ const saving = ref(false)
 const keyword = ref('')
 const onlyQuoted = ref(false)
 const categoryFilter = ref('all')
-const mainHeight = ref(0)
 
 const sidebarItems = computed(() => buildPrimarySidebar(categories.value))
-const mainStyle = computed(() => (mainHeight.value > 0 ? { height: `${mainHeight.value}px` } : {}))
 
 const filteredLines = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return lines.value.filter((line) => {
-    if (!matchCategoryFilter(categories.value, line.categoryId, categoryFilter.value)) return false
+    if (!matchCategoryFilter(line.categoryId, categoryFilter.value, categories.value)) return false
     if (!kw) return true
     const hay = `${line.productName} ${line.categoryName || ''}`.toLowerCase()
     return hay.includes(kw)
@@ -152,7 +150,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (!customerId.value) {
@@ -168,11 +166,6 @@ onShow(async () => {
     }
   }
   await reload()
-})
-
-onReady(() => {
-  const sys = uni.getSystemInfoSync()
-  mainHeight.value = sys.windowHeight - uni.upx2px(320)
 })
 
 async function reload() {
@@ -278,13 +271,10 @@ async function saveAll() {
 </script>
 
 <style scoped lang="scss">
-.page {
-  min-height: 100vh;
-  background: #f5f6f8;
-  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
-}
+@import '../../../../styles/boss-footer.scss';
 
 .top-bar {
+  flex-shrink: 0;
   background: #fff;
   padding: 20rpx 24rpx 16rpx;
   border-bottom: 1rpx solid #eee;
@@ -353,13 +343,11 @@ async function saveAll() {
 }
 
 .main {
-  display: flex;
-  min-height: 500rpx;
+  flex-direction: row;
 }
 
 .categories {
   width: 168rpx;
-  flex-shrink: 0;
   background: #fafafa;
   border-right: 1rpx solid #eee;
 }
@@ -382,8 +370,10 @@ async function saveAll() {
 .product-panel {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  background: #fff;
 }
 
 .list-head,
@@ -489,12 +479,13 @@ async function saveAll() {
 }
 
 .batch-bar {
-  display: flex;
+  flex-shrink: 0;
   gap: 16rpx;
-}
 
-.back-btn,
-.save-btn {
-  flex: 1;
+  .back-btn,
+  .save-btn {
+    flex: 1;
+    min-width: 0;
+  }
 }
 </style>

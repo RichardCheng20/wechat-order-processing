@@ -129,9 +129,9 @@ import {
   updateBossProduct,
   type CategoryItem,
   type ProductItem,
-} from '../../../../api/product'
-import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '../../../../utils/category'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/product'
+import { buildPrimarySidebar, getParentCategory, matchCategoryFilter } from '@common/utils/category'
+import { useUserStore } from '@common/stores/user'
 
 type UniInputEvent = Event & { detail?: { value?: string } }
 
@@ -192,7 +192,7 @@ onReady(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadData()

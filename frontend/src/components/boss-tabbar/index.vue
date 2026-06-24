@@ -12,15 +12,23 @@
           <text class="add-icon">+</text>
         </view>
         <template v-else>
-          <AppIcon
-            class="tab-icon"
-            :name="item.icon"
-            tone="green"
-            :size="23"
-            :tile-size="50"
-            :radius="16"
-            :active="active === item.key"
-          />
+          <view class="tab-icon-wrap">
+            <AppIcon
+              class="tab-icon"
+              :name="item.icon"
+              tone="green"
+              :size="23"
+              :tile-size="50"
+              :radius="16"
+              :active="active === item.key"
+            />
+            <view
+              v-if="item.key === 'orders' && bossAlert.hasPendingConfirm"
+              class="tab-badge"
+            >
+              {{ bossAlert.badgeText }}
+            </view>
+          </view>
           <text class="tab-text" :class="{ active: active === item.key }">{{ item.label }}</text>
         </template>
       </view>
@@ -55,14 +63,36 @@
         <view class="quick-cancel" @tap="closeQuickMenu">取消</view>
       </view>
     </u-popup>
+
+    <u-modal
+      :show="bossAlert.modalVisible"
+      title="待确认订单"
+      :content="pendingModalContent"
+      :show-cancel-button="true"
+      cancel-text="稍后处理"
+      confirm-text="立即处理"
+      confirm-color="#e53935"
+      @cancel="bossAlert.dismissModal"
+      @confirm="bossAlert.goHandlePending"
+      @close="bossAlert.dismissModal"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import AppIcon from '../AppIcon.vue'
 
 export type BossTabKey = 'orders' | 'pricing' | 'procurement' | 'mine'
+
+interface BossAlertLike {
+  pendingConfirmCount: number
+  badgeText: string
+  hasPendingConfirm: boolean
+  modalVisible: boolean
+  dismissModal: () => void
+  goHandlePending: () => void
+}
 
 interface TabItem {
   key: BossTabKey | 'add'
@@ -83,7 +113,20 @@ const props = defineProps<{
   active: BossTabKey
 }>()
 
+const bossAlert = inject<BossAlertLike>('bossAlert', {
+  pendingConfirmCount: 0,
+  badgeText: '',
+  hasPendingConfirm: false,
+  modalVisible: false,
+  dismissModal: () => undefined,
+  goHandlePending: () => undefined,
+})
 const showQuickMenu = ref(false)
+
+const pendingModalContent = computed(() => {
+  const n = bossAlert.pendingConfirmCount
+  return `您有 ${n} 笔客户订单待确认，请及时处理。`
+})
 
 const tabs: TabItem[] = [
   { key: 'orders', label: '订单', icon: 'order', url: '/pages/boss/orders/index' },
@@ -149,6 +192,30 @@ function handleQuickTap(item: QuickItem) {
 .tab-item.center {
   position: relative;
   top: -22rpx;
+}
+
+.tab-icon-wrap {
+  position: relative;
+  width: 50rpx;
+  height: 50rpx;
+}
+
+.tab-badge {
+  position: absolute;
+  top: -8rpx;
+  right: -18rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  border-radius: 16rpx;
+  background: #e53935;
+  color: #fff;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 32rpx;
+  text-align: center;
+  border: 2rpx solid #fff;
+  box-shadow: 0 2rpx 8rpx rgba(229, 57, 53, 0.45);
 }
 
 .tab-icon {

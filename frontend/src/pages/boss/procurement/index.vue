@@ -64,13 +64,14 @@
         <scroll-view v-else scroll-y class="product-scroll" :show-scrollbar="false">
           <view
             v-for="item in displayItems"
-            :key="item.productId"
+            :key="item.customItem ? `c-${item.customName}` : item.productId"
             class="card"
-            :class="{ idle: !item.demandQty }"
-            @tap="goDetail(item.productId)"
+            :class="{ idle: !item.demandQty, custom: item.customItem }"
+            @tap="goDetail(item)"
           >
             <view class="card-head">
               <text class="name">{{ item.productName }}</text>
+              <text v-if="item.customItem" class="custom-tag">代采</text>
               <view v-if="item.priced" class="priced-tag">已录进价</view>
             </view>
             <view class="metric-row">
@@ -106,16 +107,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchProcurementTasks, type ProcurementTask, type ProcurementTaskItem } from '../../../api/procurement'
-import { fetchBossCategories, type CategoryItem } from '../../../api/product'
-import AppIcon from '../../../components/AppIcon.vue'
-import BossTabbar from '../../../components/boss-tabbar/index.vue'
-import { useUserStore } from '../../../stores/user'
-import { buildPrimarySidebar, getParentCategory } from '../../../utils/category'
+import { fetchProcurementTasks, type ProcurementTask, type ProcurementTaskItem } from '@common/api/procurement'
+import { fetchBossCategories, type CategoryItem } from '@common/api/product'
+import AppIcon from '@/components/AppIcon.vue'
+import BossTabbar from '@/components/boss-tabbar/index.vue'
+import { useUserStore } from '@common/stores/user'
+import { useBossOrderAlertOnShow } from '@common/utils/boss-order-alert'
+import { useBossAlertStore } from '@common/stores/bossAlert'
+import { buildPrimarySidebar, getParentCategory } from '@common/utils/category'
 
 const userStore = useUserStore()
+const bossAlert = useBossAlertStore()
+provide('bossAlert', bossAlert)
+const { onBossPageShow } = useBossOrderAlertOnShow()
 const task = ref<ProcurementTask | null>(null)
 const categories = ref<CategoryItem[]>([])
 const loading = ref(false)
@@ -142,7 +148,7 @@ const receiveDateLabel = computed(() => {
 const displayItems = computed(() => {
   let items = task.value?.items || []
   if (categoryFilter.value === 'uncategorized') {
-    items = items.filter((item) => !item.categoryId)
+    items = items.filter((item) => item.customItem || !item.categoryId)
   }
   if (subCategoryFilter.value !== 'all') {
     const catId = Number(subCategoryFilter.value)
@@ -153,7 +159,7 @@ const displayItems = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (!receiveDate.value) {
@@ -164,6 +170,7 @@ onShow(async () => {
   } catch {
     categories.value = []
   }
+  await onBossPageShow()
   await loadTasks()
 })
 
@@ -210,9 +217,15 @@ function shiftDay(delta: number) {
   loadTasks()
 }
 
-function goDetail(productId: number) {
+function goDetail(item: ProcurementTaskItem) {
+  if (item.customItem && item.customName) {
+    uni.navigateTo({
+      url: `/pages/boss/procurement/detail/index?customName=${encodeURIComponent(item.customName)}&receiveDate=${receiveDate.value}`,
+    })
+    return
+  }
   uni.navigateTo({
-    url: `/pages/boss/procurement/detail/index?productId=${productId}&receiveDate=${receiveDate.value}`,
+    url: `/pages/boss/procurement/detail/index?productId=${item.productId}&receiveDate=${receiveDate.value}`,
   })
 }
 
@@ -406,6 +419,19 @@ function formatQty(value?: number) {
 
 .card.idle .metric-value.need {
   color: #ccc;
+}
+
+.custom-tag {
+  flex-shrink: 0;
+  padding: 4rpx 12rpx;
+  font-size: 20rpx;
+  color: #e67e22;
+  background: #fff7e6;
+  border-radius: 999rpx;
+}
+
+.card.custom {
+  border: 1rpx solid #ffe8c7;
 }
 
 .card-head {

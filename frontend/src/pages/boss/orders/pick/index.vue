@@ -71,7 +71,13 @@
       </view>
 
       <view class="boss-bottom-bar pick-bottom-bar dual">
-        <button class="boss-outline-btn flex" :loading="fillingAll" @tap="handleFillAll">一键拣单出库</button>
+        <button
+          class="boss-outline-btn flex"
+          :class="{ disabled: !canFillOutbound }"
+          :loading="fillingAll"
+          :disabled="!canFillOutbound"
+          @tap="handleFillAll"
+        >一键拣单出库</button>
         <button class="boss-primary-btn flex" :loading="completing" @tap="handleComplete">完成</button>
       </view>
     </template>
@@ -79,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   completeBossPick,
@@ -87,9 +93,9 @@ import {
   fillBossPickQty,
   startBossPick,
   updateBossPickItem,
-} from '../../../../api/pick'
-import type { OrderInfo, OrderLineItem } from '../../../../api/order'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/pick'
+import type { OrderInfo, OrderLineItem } from '@common/api/order'
+import { useUserStore } from '@common/stores/user'
 
 type FieldType = 'actualQty' | 'dealPrice'
 
@@ -101,6 +107,11 @@ const fillingAll = ref(false)
 const showKeypad = ref(false)
 const orderId = ref(0)
 
+const canFillOutbound = computed(() => {
+  const status = order.value?.status
+  return status === 'PENDING_PICK' || status === 'PICKING'
+})
+
 const activeItemId = ref<number | null>(null)
 const activeField = ref<FieldType>('actualQty')
 const draftValues = reactive<Record<string, string>>({})
@@ -111,7 +122,7 @@ function draftKey(itemId: number, field: FieldType) {
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   orderId.value = Number(query?.id || 0)
@@ -262,6 +273,10 @@ async function markShortage() {
 }
 
 async function handleFillAll() {
+  if (!canFillOutbound.value) {
+    uni.showToast({ title: '订单已拣完，不可再次出库', icon: 'none' })
+    return
+  }
   uni.showModal({
     title: '确认拣单出库',
     content: '确认拣单即确认已配好客户需要的货物，会相应减少对应产品库存。',
@@ -471,5 +486,11 @@ async function handleComplete() {
 
 .boss-outline-btn::after {
   border: none;
+}
+
+.boss-outline-btn.disabled {
+  color: #bbb;
+  border-color: #ddd;
+  background: #f5f6f7;
 }
 </style>

@@ -298,14 +298,14 @@
 <script setup lang="ts">
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { computed, ref } from 'vue'
-import { filterUnits, mergeUnits, normalizeUnit, PRESET_UNITS } from '../../../constants/units'
-import { fetchBossCustomers, type CustomerItem } from '../../../api/customer'
-import { createBossOrder, fetchBossOrderDetail, updateBossOrder } from '../../../api/order'
-import { fetchBossProducts, type ProductItem } from '../../../api/product'
-import AppIcon from '../../../components/AppIcon.vue'
-import { deliveryDateString, formatDeliveryLabel, useSalesOrderStore, type SalesOrderLine } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
-import { applyParsedLines, parseOrderText } from '../../../utils/parseOrderText'
+import { filterUnits, mergeUnits, normalizeUnit, PRESET_UNITS } from '@common/constants/units'
+import { fetchBossCustomers, type CustomerItem } from '@common/api/customer'
+import { createBossOrder, fetchBossOrderDetail, updateBossOrder } from '@common/api/order'
+import { fetchBossProducts, type ProductItem } from '@common/api/product'
+import AppIcon from '@/components/AppIcon.vue'
+import { deliveryDateString, formatDeliveryLabel, useSalesOrderStore, type SalesOrderLine } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
+import { applyParsedLines, parseOrderText } from '@common/utils/parseOrderText'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -375,7 +375,7 @@ const canUseTemporaryInPicker = computed(() => {
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   editOrderId.value = Number(query?.orderId || 0)
@@ -395,7 +395,7 @@ async function loadEditOrder() {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   allCustomers.value = await fetchBossCustomers()
@@ -775,12 +775,12 @@ async function handleSubmit() {
       const payload = salesOrder.customer?.id && !salesOrder.customer.temporary
         ? basePayload
         : { ...basePayload, customerName: salesOrder.customer?.name }
-      await updateBossOrder(salesOrder.editOrderId, payload)
-      const editId = salesOrder.editOrderId
+      const updated = await updateBossOrder(salesOrder.editOrderId, payload)
+      const newId = updated.id
       salesOrder.reset()
-      uni.showToast({ title: '已保存', icon: 'success' })
+      uni.showToast({ title: '改单成功，已生成新订单', icon: 'success' })
       setTimeout(() => {
-        uni.redirectTo({ url: `/pages/boss/orders/detail/index?id=${editId}` })
+        uni.redirectTo({ url: `/pages/boss/orders/detail/index?id=${newId}` })
       }, 400)
       return
     }

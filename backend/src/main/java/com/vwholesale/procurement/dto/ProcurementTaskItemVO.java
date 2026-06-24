@@ -10,6 +10,8 @@ import java.math.BigDecimal;
 public class ProcurementTaskItemVO {
 
     private Long productId;
+    private Boolean customItem;
+    private String customName;
     private String productName;
     private Long categoryId;
     private String unit;

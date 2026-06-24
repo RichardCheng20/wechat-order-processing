@@ -171,11 +171,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { createBossPurchasePayment, uploadPaymentVoucher } from '../../../api/payment'
-import { fetchBossSuppliers, type SupplierItem } from '../../../api/supplier'
-import AppIcon from '../../../components/AppIcon.vue'
-import { deliveryDateString } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
+import { createBossPurchasePayment, uploadPaymentVoucher } from '@common/api/payment'
+import { fetchBossSuppliers, type SupplierItem } from '@common/api/supplier'
+import AppIcon from '@/components/AppIcon.vue'
+import { deliveryDateString } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
 
 interface VoucherPreview {
   localPath: string
@@ -231,7 +231,7 @@ const canUseNewSupplierInPicker = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   allSuppliers.value = await fetchBossSuppliers()

@@ -23,6 +23,8 @@ public class OrderItem {
     private BigDecimal stockAppliedQty;
     private String unit;
     private BigDecimal dealPrice;
+    /** 代采成本单价，仅老板端可见 */
+    private BigDecimal costPrice;
     private BigDecimal subtotalAmount;
     private Integer shortageFlag;
     private Long substituteProductId;

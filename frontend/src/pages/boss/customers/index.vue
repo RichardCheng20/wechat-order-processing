@@ -8,7 +8,7 @@
             class="search-input"
             type="text"
             :value="keyword"
-            placeholder="搜索客户名称"
+            placeholder="搜索客户名称/编号"
             confirm-type="search"
             @input="onKeywordInput"
             @confirm="onSearchConfirm"
@@ -63,6 +63,7 @@
         >
           <view class="row-main">
             <text class="name">{{ item.name }}</text>
+            <text v-if="item.customerNo" class="customer-no">编号 {{ item.customerNo }}</text>
             <view v-if="hasDebt(item)" class="debt-tag">
               <text>欠 ¥ {{ formatMoney(item.outstandingAmount) }}</text>
             </view>
@@ -123,9 +124,9 @@ import {
   generateCustomerInvite,
   type CustomerItem,
   type InviteCodeResult,
-} from '../../../api/customer'
-import AppIcon from '../../../components/AppIcon.vue'
-import { useUserStore } from '../../../stores/user'
+} from '@common/api/customer'
+import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const customers = ref<CustomerItem[]>([])
@@ -176,7 +177,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadData()
@@ -185,7 +186,9 @@ onShow(async () => {
 async function loadData() {
   loading.value = true
   try {
-    customers.value = await fetchBossCustomers(keyword.value || undefined)
+    customers.value = await fetchBossCustomers(keyword.value || undefined) || []
+  } catch {
+    customers.value = []
   } finally {
     loading.value = false
   }
@@ -460,6 +463,13 @@ function formatTime(value: string) {
   font-size: 32rpx;
   font-weight: 600;
   color: #222;
+}
+
+.customer-no {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: #888;
 }
 
 .debt-tag {

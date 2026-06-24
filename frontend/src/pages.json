@@ -7,311 +7,372 @@
   },
   "pages": [
     {
-      "path": "pages/login/index",
+      "path": "pages/launch/index",
       "style": {
-        "navigationBarTitleText": "登录"
+        "navigationStyle": "custom",
+        "navigationBarTitleText": ""
       }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "packages/common",
+      "pages": [
+        {
+          "path": "login/index",
+          "style": {
+            "navigationBarTitleText": "登录"
+          }
+        }
+      ],
+      "independent": true
     },
     {
-      "path": "pages/customer/home/index",
-      "style": {
-        "navigationBarTitleText": "下单",
-        "disableScroll": true
-      }
+      "root": "pages/customer",
+      "pages": [
+        {
+          "path": "home/index",
+          "style": {
+            "navigationBarTitleText": "下单",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "cart/index",
+          "style": {
+            "navigationBarTitleText": "购物车"
+          }
+        },
+        {
+          "path": "orders/index",
+          "style": {
+            "navigationBarTitleText": "我的订单"
+          }
+        },
+        {
+          "path": "mine/index",
+          "style": {
+            "navigationBarTitleText": "我的"
+          }
+        },
+        {
+          "path": "bind/index",
+          "style": {
+            "navigationBarTitleText": "绑定客户"
+          }
+        }
+      ]
     },
     {
-      "path": "pages/boss/orders/index",
-      "style": {
-        "navigationBarTitleText": "订单"
-      }
+      "root": "pages/boss",
+      "pages": [
+        {
+          "path": "orders/index",
+          "style": {
+            "navigationBarTitleText": "订单"
+          }
+        },
+        {
+          "path": "orders/detail/index",
+          "style": {
+            "navigationBarTitleText": "订单详情",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "orders/pick/index",
+          "style": {
+            "navigationBarTitleText": "分拣录入",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "orders/quick-pick/index",
+          "style": {
+            "navigationBarTitleText": "一键拣单",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "orders/print/index",
+          "style": {
+            "navigationBarTitleText": "发送对账单"
+          }
+        },
+        {
+          "path": "products/index",
+          "style": {
+            "navigationBarTitleText": "商品管理",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "products/batch-price/index",
+          "style": {
+            "navigationBarTitleText": "批量录价",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "products/form",
+          "style": {
+            "navigationBarTitleText": "新建商品"
+          }
+        },
+        {
+          "path": "products/categories",
+          "style": {
+            "navigationBarTitleText": "分类管理",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "products/categories/sort/index",
+          "style": {
+            "navigationBarTitleText": "分类排序",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "pricing/index",
+          "style": {
+            "navigationBarTitleText": "录价"
+          }
+        },
+        {
+          "path": "procurement/index",
+          "style": {
+            "navigationBarTitleText": "采购任务"
+          }
+        },
+        {
+          "path": "procurement/detail/index",
+          "style": {
+            "navigationBarTitleText": "采购详情"
+          }
+        },
+        {
+          "path": "sales-order/index",
+          "style": {
+            "navigationBarTitleText": "新建订单",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "sales-order/select-customer",
+          "style": {
+            "navigationBarTitleText": "选择客户",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "sales-order/products",
+          "style": {
+            "navigationBarTitleText": "商品库",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "sales-order/success",
+          "style": {
+            "navigationBarTitleText": "确认订单"
+          }
+        },
+        {
+          "path": "sales-payment/index",
+          "style": {
+            "navigationBarTitleText": "新建记账"
+          }
+        },
+        {
+          "path": "purchase-order/index",
+          "style": {
+            "navigationBarTitleText": "采购开单"
+          }
+        },
+        {
+          "path": "purchase-payment/index",
+          "style": {
+            "navigationBarTitleText": "新建采购记账"
+          }
+        },
+        {
+          "path": "mine/index",
+          "style": {
+            "navigationBarTitleText": "我的"
+          }
+        },
+        {
+          "path": "receivable/index",
+          "style": {
+            "navigationBarTitleText": "应收列表",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "received/index",
+          "style": {
+            "navigationBarTitleText": "收款记录",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "stats/index",
+          "style": {
+            "navigationBarTitleText": "营收统计",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "ranking/customers/index",
+          "style": {
+            "navigationBarTitleText": "客户排行",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "customer-report/index",
+          "style": {
+            "navigationBarTitleText": "客户报表",
+            "navigationBarBackgroundColor": "#07c160",
+            "navigationBarTextStyle": "white",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "ranking/products/index",
+          "style": {
+            "navigationBarTitleText": "商品排行",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "quotes/index",
+          "style": {
+            "navigationBarTitleText": "报价单管理",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "quotes/detail/index",
+          "style": {
+            "navigationBarTitleText": "客户报价单",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "sales-data/index",
+          "style": {
+            "navigationBarTitleText": "销售数据",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "profile/index",
+          "style": {
+            "navigationBarTitleText": "个人信息",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "suppliers/index",
+          "style": {
+            "navigationBarTitleText": "供应商管理"
+          }
+        },
+        {
+          "path": "settings/index",
+          "style": {
+            "navigationBarTitleText": "设置"
+          }
+        },
+        {
+          "path": "personnel/index",
+          "style": {
+            "navigationBarTitleText": "人员管理"
+          }
+        },
+        {
+          "path": "personnel/form",
+          "style": {
+            "navigationBarTitleText": "添加人员"
+          }
+        },
+        {
+          "path": "messages/index",
+          "style": {
+            "navigationBarTitleText": "消息通知"
+          }
+        },
+        {
+          "path": "pricing/detail/index",
+          "style": {
+            "navigationBarTitleText": "订单录价"
+          }
+        },
+        {
+          "path": "customers/index",
+          "style": {
+            "navigationBarTitleText": "客户管理",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "customers/detail/index",
+          "style": {
+            "navigationBarTitleText": "客户详情"
+          }
+        },
+        {
+          "path": "customers/reconcile/index",
+          "style": {
+            "navigationBarTitleText": "订单对账",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "customers/payments/index",
+          "style": {
+            "navigationBarTitleText": "收款记录"
+          }
+        },
+        {
+          "path": "customers/vouchers/index",
+          "style": {
+            "navigationBarTitleText": "结款凭证",
+            "disableScroll": true
+          }
+        }
+      ]
     },
     {
-      "path": "pages/boss/orders/detail/index",
-      "style": {
-        "navigationBarTitleText": "订单详情",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/orders/pick/index",
-      "style": {
-        "navigationBarTitleText": "分拣录入",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/orders/print/index",
-      "style": {
-        "navigationBarTitleText": "发送对账单"
-      }
-    },
-    {
-      "path": "pages/boss/products/index",
-      "style": {
-        "navigationBarTitleText": "商品管理",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/products/batch-price/index",
-      "style": {
-        "navigationBarTitleText": "批量录价",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/products/form",
-      "style": {
-        "navigationBarTitleText": "新建商品"
-      }
-    },
-    {
-      "path": "pages/boss/products/categories",
-      "style": {
-        "navigationBarTitleText": "分类管理",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/products/categories/sort/index",
-      "style": {
-        "navigationBarTitleText": "分类排序",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/customer/cart/index",
-      "style": {
-        "navigationBarTitleText": "购物车"
-      }
-    },
-    {
-      "path": "pages/customer/orders/index",
-      "style": {
-        "navigationBarTitleText": "我的订单"
-      }
-    },
-    {
-      "path": "pages/customer/mine/index",
-      "style": {
-        "navigationBarTitleText": "我的"
-      }
-    },
-    {
-      "path": "pages/boss/pricing/index",
-      "style": {
-        "navigationBarTitleText": "录价"
-      }
-    },
-    {
-      "path": "pages/boss/procurement/index",
-      "style": {
-        "navigationBarTitleText": "采购任务"
-      }
-    },
-    {
-      "path": "pages/boss/procurement/detail/index",
-      "style": {
-        "navigationBarTitleText": "采购详情"
-      }
-    },
-    {
-      "path": "pages/boss/sales-order/index",
-      "style": {
-        "navigationBarTitleText": "新建订单",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/sales-order/select-customer",
-      "style": {
-        "navigationBarTitleText": "选择客户",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/sales-order/products",
-      "style": {
-        "navigationBarTitleText": "商品库",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/sales-order/success",
-      "style": {
-        "navigationBarTitleText": "确认订单"
-      }
-    },
-    {
-      "path": "pages/boss/sales-payment/index",
-      "style": {
-        "navigationBarTitleText": "新建记账"
-      }
-    },
-    {
-      "path": "pages/boss/purchase-order/index",
-      "style": {
-        "navigationBarTitleText": "采购开单"
-      }
-    },
-    {
-      "path": "pages/boss/purchase-payment/index",
-      "style": {
-        "navigationBarTitleText": "新建采购记账"
-      }
-    },
-    {
-      "path": "pages/boss/mine/index",
-      "style": {
-        "navigationBarTitleText": "我的"
-      }
-    },
-    {
-      "path": "pages/boss/receivable/index",
-      "style": {
-        "navigationBarTitleText": "应收列表",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/received/index",
-      "style": {
-        "navigationBarTitleText": "收款记录",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/stats/index",
-      "style": {
-        "navigationBarTitleText": "营收统计",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/ranking/customers/index",
-      "style": {
-        "navigationBarTitleText": "客户排行",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/customer-report/index",
-      "style": {
-        "navigationBarTitleText": "客户报表",
-        "navigationBarBackgroundColor": "#07c160",
-        "navigationBarTextStyle": "white",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/ranking/products/index",
-      "style": {
-        "navigationBarTitleText": "商品排行",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/quotes/index",
-      "style": {
-        "navigationBarTitleText": "报价单管理",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/quotes/detail/index",
-      "style": {
-        "navigationBarTitleText": "客户报价单",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/sales-data/index",
-      "style": {
-        "navigationBarTitleText": "销售数据",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/profile/index",
-      "style": {
-        "navigationBarTitleText": "个人信息",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/suppliers/index",
-      "style": {
-        "navigationBarTitleText": "供应商管理"
-      }
-    },
-    {
-      "path": "pages/boss/settings/index",
-      "style": {
-        "navigationBarTitleText": "设置"
-      }
-    },
-    {
-      "path": "pages/boss/messages/index",
-      "style": {
-        "navigationBarTitleText": "消息通知"
-      }
-    },
-    {
-      "path": "pages/boss/pricing/detail/index",
-      "style": {
-        "navigationBarTitleText": "订单录价"
-      }
-    },
-    {
-      "path": "pages/boss/customers/index",
-      "style": {
-        "navigationBarTitleText": "客户管理",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/customers/detail/index",
-      "style": {
-        "navigationBarTitleText": "客户详情"
-      }
-    },
-    {
-      "path": "pages/boss/customers/reconcile/index",
-      "style": {
-        "navigationBarTitleText": "订单对账",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/boss/customers/payments/index",
-      "style": {
-        "navigationBarTitleText": "收款记录"
-      }
-    },
-    {
-      "path": "pages/boss/customers/vouchers/index",
-      "style": {
-        "navigationBarTitleText": "结款凭证",
-        "disableScroll": true
-      }
-    },
-    {
-      "path": "pages/customer/bind/index",
-      "style": {
-        "navigationBarTitleText": "绑定客户"
-      }
-    },
-    {
-      "path": "pages/worker/tasks/index",
-      "style": {
-        "navigationBarTitleText": "员工任务"
-      }
-    },
-    {
-      "path": "pages/worker/task-detail/index",
-      "style": {
-        "navigationBarTitleText": "分拣详情"
-      }
+      "root": "pages/worker",
+      "pages": [
+        {
+          "path": "tasks/index",
+          "style": {
+            "navigationBarTitleText": "待拣单"
+          }
+        },
+        {
+          "path": "picked/index",
+          "style": {
+            "navigationBarTitleText": "已拣单"
+          }
+        },
+        {
+          "path": "mine/index",
+          "style": {
+            "navigationBarTitleText": "我的"
+          }
+        },
+        {
+          "path": "task-detail/index",
+          "style": {
+            "navigationBarTitleText": "拣单详情"
+          }
+        }
+      ]
     }
   ],
   "globalStyle": {

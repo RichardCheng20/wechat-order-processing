@@ -15,6 +15,7 @@ import com.vwholesale.customer.dto.CustomerVO;
 import com.vwholesale.customer.dto.InviteCodeVO;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
+import com.vwholesale.customer.support.CustomerNoGenerator;
 import com.vwholesale.user.entity.User;
 import com.vwholesale.user.mapper.UserMapper;
 import com.vwholesale.order.mapper.OrderMapper;
@@ -39,6 +40,7 @@ public class CustomerService {
     private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     private final CustomerMapper customerMapper;
+    private final CustomerNoGenerator customerNoGenerator;
     private final UserMapper userMapper;
     private final OrderMapper orderMapper;
     private final MerchantContext merchantContext;
@@ -54,7 +56,8 @@ public class CustomerService {
             String kw = keyword.trim();
             wrapper.and(w -> w.like(Customer::getName, kw)
                     .or().like(Customer::getContactName, kw)
-                    .or().like(Customer::getPhone, kw));
+                    .or().like(Customer::getPhone, kw)
+                    .or().like(Customer::getCustomerNo, kw));
         }
         Map<Long, CustomerOrderStats> statsMap = loadOrderStats(merchantId);
         return customerMapper.selectList(wrapper).stream()
@@ -86,6 +89,7 @@ public class CustomerService {
         customer.setBindStatus("NOT_INVITED");
         customer.setRemark(request.getRemark());
         customer.setStatus(1);
+        customer.setCustomerNo(customerNoGenerator.nextNo(customer.getMerchantId()));
         customerMapper.insert(customer);
         return toVO(customer, null);
     }
@@ -179,18 +183,26 @@ public class CustomerService {
     @Transactional
     public CustomerVO bindByInviteCode(CustomerBindRequest request) {
         RoleChecker.requireCustomer();
-        long userId = RoleChecker.currentUserId();
-        User user = userMapper.selectById(userId);
+        User user = userMapper.selectById(RoleChecker.currentUserId());
         if (user == null) {
             throw BusinessException.of(401, "用户不存在");
         }
+        bindByInviteCodeForUser(user, request.getInviteCode());
+        return toVO(customerMapper.selectById(user.getCustomerId()), null);
+    }
+
+    @Transactional
+    public void bindByInviteCodeForUser(User user, String inviteCode) {
         if (user.getCustomerId() != null) {
             throw BusinessException.of(400, "您已绑定客户档案，无需重复绑定");
         }
+        if (!StringUtils.hasText(inviteCode)) {
+            throw BusinessException.of(400, "邀请码不能为空");
+        }
 
-        String code = request.getInviteCode().trim().toUpperCase();
+        String code = inviteCode.trim().toUpperCase();
         Customer customer = customerMapper.selectOne(new LambdaQueryWrapper<Customer>()
-                .eq(Customer::getMerchantId, merchantContext.currentMerchantId())
+                .eq(Customer::getMerchantId, user.getMerchantId())
                 .eq(Customer::getInviteCode, code));
         if (customer == null) {
             throw BusinessException.of(400, "邀请码无效");
@@ -202,7 +214,7 @@ public class CustomerService {
             throw BusinessException.of(400, "该邀请码已被使用");
         }
 
-        customer.setBindUserId(userId);
+        customer.setBindUserId(user.getId());
         customer.setBindStatus("BOUND");
         customerMapper.updateById(customer);
 
@@ -210,9 +222,9 @@ public class CustomerService {
         user.setStatus("ENABLED");
         userMapper.updateById(user);
 
-        StpUtil.getSession().set("customerId", customer.getId());
-
-        return toVO(customer, null);
+        if (StpUtil.isLogin() && StpUtil.getLoginIdAsLong() == user.getId()) {
+            StpUtil.getSession().set("customerId", customer.getId());
+        }
     }
 
     private Map<Long, CustomerOrderStats> loadOrderStats(Long merchantId) {
@@ -230,13 +242,13 @@ public class CustomerService {
                     && (stats.lastOrderAt == null || order.getCreatedAt().isAfter(stats.lastOrderAt))) {
                 stats.lastOrderAt = order.getCreatedAt();
             }
-            if (OrderStatus.COMPLETED.equals(order.getStatus())) {
-                BigDecimal receivable = order.getReceivableAmount() != null ? order.getReceivableAmount() : order.getAmount();
+            if (OrderReceivableRules.countsTowardCustomerDebt(order)) {
+                BigDecimal receivable = order.getReceivableAmount() != null
+                        ? order.getReceivableAmount()
+                        : order.getAmount();
                 if (receivable != null) {
                     stats.totalSalesAmount = stats.totalSalesAmount.add(receivable);
                 }
-            }
-            if (OrderReceivableRules.countsTowardCustomerDebt(order)) {
                 BigDecimal outstanding = OrderReceivableRules.outstandingReceivable(order);
                 if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
                     stats.outstandingAmount = stats.outstandingAmount.add(outstanding);
@@ -259,6 +271,7 @@ public class CustomerService {
     private CustomerVO toVO(Customer customer, CustomerOrderStats stats) {
         CustomerVO.CustomerVOBuilder builder = CustomerVO.builder()
                 .id(customer.getId())
+                .customerNo(customer.getCustomerNo())
                 .name(customer.getName())
                 .contactName(customer.getContactName())
                 .phone(customer.getPhone())
@@ -302,6 +315,9 @@ public class CustomerService {
             Customer customer = customerMapper.selectById(customerId);
             if (customer != null) {
                 result.put("customerName", customer.getName());
+                if (StringUtils.hasText(customer.getCustomerNo())) {
+                    result.put("customerNo", customer.getCustomerNo());
+                }
             }
         }
         return result;

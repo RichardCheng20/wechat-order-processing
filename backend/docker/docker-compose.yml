@@ -24,6 +24,20 @@ services:
     volumes:
       - redis_data:/data
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: vwholesale-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: vwholesale
+      RABBITMQ_DEFAULT_PASS: vwholesale
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
 volumes:
   mysql_data:
   redis_data:
+  rabbitmq_data:

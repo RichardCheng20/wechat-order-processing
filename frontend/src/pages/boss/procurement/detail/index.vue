@@ -16,7 +16,7 @@
             <text class="summary-label">客户需求</text>
             <text class="summary-value">{{ formatQty(detail.demandQty) }}{{ detail.unit }}</text>
           </view>
-          <view class="summary-item editable" @tap="openStockEditor">
+          <view v-if="!detail.customItem" class="summary-item editable" @tap="openStockEditor">
             <text class="summary-label">现有库存</text>
             <text class="summary-value stock">{{ formatQty(detail.stockQty) }}{{ detail.unit }}</text>
             <text class="edit-hint">点击修改</text>
@@ -27,7 +27,19 @@
           </view>
         </view>
 
-        <view class="price-card">
+        <view v-if="detail.customItem" class="price-card readonly-card">
+          <view class="price-head">
+            <text class="section-title">代采进价</text>
+            <view v-if="detail.priced" class="priced-tag">已录</view>
+          </view>
+          <text v-if="detail.purchasePrice != null" class="readonly-price">
+            ¥{{ formatMoney(detail.purchasePrice) }} / {{ detail.unit }}
+          </text>
+          <text v-else class="readonly-hint">尚未录价，请至「录价」页填写成本价与售价</text>
+          <text class="readonly-note">进价已在录价环节录入，此处仅作采购汇总展示</text>
+        </view>
+
+        <view v-else class="price-card">
           <view class="price-head">
             <text class="section-title">今晚进价（统一）</text>
             <view v-if="detail.priced" class="priced-tag">已录</view>
@@ -150,19 +162,21 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import {
+  fetchCustomProcurementDetail,
   fetchProcurementProductDetail,
   fetchProcurementReferencePrice,
   submitProcurementPurchasePrice,
   updateProcurementStock,
   type ProcurementProductDetail,
-} from '../../../../api/procurement'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/procurement'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const detail = ref<ProcurementProductDetail | null>(null)
 const loading = ref(false)
 const submitting = ref(false)
 const productId = ref(0)
+const customName = ref('')
 const receiveDate = ref('')
 const priceDraft = ref('')
 const purchaseQtyDraft = ref('')
@@ -190,6 +204,7 @@ const receiveDateLabel = computed(() => {
 
 onLoad((query) => {
   productId.value = Number(query?.productId || 0)
+  customName.value = query?.customName ? decodeURIComponent(String(query.customName)) : ''
   if (query?.receiveDate) {
     receiveDate.value = String(query.receiveDate)
   }
@@ -197,7 +212,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (!receiveDate.value) {
@@ -207,10 +222,12 @@ onShow(async () => {
 })
 
 async function loadDetail() {
-  if (!productId.value) return
+  if (!productId.value && !customName.value) return
   loading.value = true
   try {
-    detail.value = await fetchProcurementProductDetail(productId.value, receiveDate.value)
+    detail.value = customName.value
+      ? await fetchCustomProcurementDetail(customName.value, receiveDate.value)
+      : await fetchProcurementProductDetail(productId.value, receiveDate.value)
     if (detail.value.receiveDate) {
       receiveDate.value = detail.value.receiveDate
     }
@@ -398,6 +415,27 @@ function formatQty(value?: number) {
   height: 100vh;
   padding: 16rpx 20rpx calc(40rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+.readonly-card {
+  background: #fffaf2;
+}
+
+.readonly-price {
+  display: block;
+  margin-top: 16rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #e67e22;
+}
+
+.readonly-hint,
+.readonly-note {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #888;
+  line-height: 1.5;
 }
 
 .head-card,

@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
-import { useUserStore } from '../../../stores/user'
+import { useUserStore } from '@common/stores/user'
 
 interface MessageItem {
   id: number
@@ -35,7 +35,7 @@ const messages = ref<MessageItem[]>([])
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   loading.value = true

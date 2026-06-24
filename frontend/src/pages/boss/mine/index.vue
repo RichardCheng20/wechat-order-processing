@@ -43,7 +43,7 @@
       </view>
     </view>
 
-    <view class="section-card">
+    <view v-if="userStore.isOwnerAdmin" class="section-card">
       <text class="section-title block">数据平台</text>
       <view class="grid compact">
         <view
@@ -78,14 +78,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchBossProfile, type BossProfile } from '../../../api/profile'
-import AppIcon from '../../../components/AppIcon.vue'
-import BossTabbar from '../../../components/boss-tabbar/index.vue'
-import { useUserStore } from '../../../stores/user'
+import { fetchBossProfile, type BossProfile } from '@common/api/profile'
+import AppIcon from '@/components/AppIcon.vue'
+import BossTabbar from '@/components/boss-tabbar/index.vue'
+import { useUserStore } from '@common/stores/user'
+import { useBossOrderAlertOnShow } from '@common/utils/boss-order-alert'
+import { useBossAlertStore } from '@common/stores/bossAlert'
 
 const userStore = useUserStore()
+const bossAlert = useBossAlertStore()
+provide('bossAlert', bossAlert)
+const { onBossPageShow } = useBossOrderAlertOnShow()
 const profile = ref<BossProfile>({
   merchantName: '',
   contactName: '',
@@ -107,13 +112,13 @@ const dataPlatformItems = [
 ]
 
 const commonItems = [
-  { label: '同事管理', icon: 'colleague', color: 'blue' as const, action: 'colleague' },
+  { label: '人员管理', icon: 'colleague', color: 'blue' as const, action: 'personnel' },
   { label: '设置', icon: 'settings', color: 'orange' as const, action: 'settings' },
 ]
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   try {
@@ -121,6 +126,7 @@ onShow(async () => {
   } catch {
     // 保留默认值
   }
+  await onBossPageShow()
 })
 
 function goProfile() {
@@ -161,6 +167,9 @@ function handleDataPlatformTap(item: { label: string; path?: string }) {
 
 function handleCommonTap(item: { label: string; action: string }) {
   switch (item.action) {
+    case 'personnel':
+      uni.navigateTo({ url: '/pages/boss/personnel/index' })
+      break
     case 'settings':
       uni.navigateTo({ url: '/pages/boss/settings/index' })
       break

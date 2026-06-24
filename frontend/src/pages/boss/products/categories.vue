@@ -74,9 +74,9 @@ import {
   deleteBossCategory,
   fetchBossCategories,
   type CategoryItem,
-} from '../../../api/product'
-import AppIcon from '../../../components/AppIcon.vue'
-import { useUserStore } from '../../../stores/user'
+} from '@common/api/product'
+import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const categories = ref<CategoryItem[]>([])
@@ -101,7 +101,7 @@ const displayGroups = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await loadData()

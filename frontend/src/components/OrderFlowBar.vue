@@ -18,7 +18,13 @@
 </template>
 
 <script setup lang="ts">
-import { connectorPhase, type FlowStepKey, type OrderFlowStep } from '../utils/order-flow'
+export type FlowStepKey = 'confirm' | 'confirmed' | 'pick' | 'price' | 'reconcile' | 'pay'
+
+export interface OrderFlowStep {
+  key: FlowStepKey
+  label: string
+  phase: 'pending' | 'current' | 'done' | 'cancelled' | 'danger'
+}
 
 defineProps<{
   steps: OrderFlowStep[]
@@ -27,6 +33,10 @@ defineProps<{
 const emit = defineEmits<{
   tap: [key: FlowStepKey]
 }>()
+
+function connectorPhase(prev: OrderFlowStep): 'done' | 'pending' {
+  return prev.phase === 'done' ? 'done' : 'pending'
+}
 </script>
 
 <style scoped lang="scss">

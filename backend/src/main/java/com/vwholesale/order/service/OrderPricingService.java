@@ -7,6 +7,8 @@ import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.customer.entity.Customer;
 import com.vwholesale.customer.mapper.CustomerMapper;
+import com.vwholesale.mq.model.OrderEventMessage;
+import com.vwholesale.mq.publisher.OrderEventAfterCommitPublisher;
 import com.vwholesale.order.dto.OrderPricingItemVO;
 import com.vwholesale.order.dto.OrderPricingSubmitRequest;
 import com.vwholesale.order.dto.OrderPricingVO;
@@ -18,10 +20,13 @@ import com.vwholesale.order.dto.PricingProductSummaryVO;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
+import com.vwholesale.order.support.OrderItemDisplay;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.support.OrderFlowStatus;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.product.service.ProductPriceService;
+import com.vwholesale.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,6 +71,7 @@ public class OrderPricingService {
     private final ProductMapper productMapper;
     private final ProductPriceService productPriceService;
     private final MerchantContext merchantContext;
+    private final OrderEventAfterCommitPublisher orderEventAfterCommitPublisher;
 
     public List<OrderPricingVO> listPendingPrice() {
         RoleChecker.requireBoss();
@@ -116,22 +122,12 @@ public class OrderPricingService {
         }
 
         BigDecimal totalAmount = BigDecimal.ZERO;
+        Map<Long, Product> productMap = loadProductMap(items);
         for (OrderItem item : items) {
             PricingItemRequest priceReq = priceMap.get(item.getId());
-            if (priceReq == null || priceReq.getDealPrice() == null) {
-                throw BusinessException.of(400, "请为所有商品填写成交单价");
-            }
-            if (priceReq.getDealPrice().compareTo(BigDecimal.ZERO) < 0) {
-                throw BusinessException.of(400, "成交单价不能为负数");
-            }
-
-            BigDecimal qty = item.getActualQty() != null ? item.getActualQty() : item.getOrderQty();
-            BigDecimal subtotal = priceReq.getDealPrice().multiply(qty).setScale(2, RoundingMode.HALF_UP);
-
-            item.setDealPrice(priceReq.getDealPrice());
-            item.setSubtotalAmount(subtotal);
+            applyPricingFromRequest(item, productMap.get(item.getProductId()), priceReq);
             orderItemMapper.updateById(item);
-            totalAmount = totalAmount.add(subtotal);
+            totalAmount = totalAmount.add(item.getSubtotalAmount());
         }
 
         order.setAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
@@ -150,41 +146,37 @@ public class OrderPricingService {
             return List.of();
         }
 
-        Map<Long, List<OrderItem>> grouped = workspace.items().stream()
+        Map<Long, List<OrderItem>> catalogGrouped = workspace.items().stream()
+                .filter(item -> !OrderItemDisplay.isCustomItem(item))
                 .collect(Collectors.groupingBy(OrderItem::getProductId));
+        Map<String, List<OrderItem>> customGrouped = workspace.items().stream()
+                .filter(OrderItemDisplay::isCustomItem)
+                .collect(Collectors.groupingBy(item -> item.getOriginalText().trim()));
 
         List<PricingProductSummaryVO> summaries = new ArrayList<>();
-        for (Map.Entry<Long, List<OrderItem>> entry : grouped.entrySet()) {
+        for (Map.Entry<Long, List<OrderItem>> entry : catalogGrouped.entrySet()) {
             Product product = workspace.productMap().get(entry.getKey());
-            if (product == null) {
+            if (product == null || ProductService.isCustomOrderProduct(product)) {
                 continue;
             }
-            if (StringUtils.hasText(keyword) && !product.getName().contains(keyword.trim())) {
-                continue;
+            PricingProductSummaryVO summary = buildProductSummary(entry.getKey(), product.getName(), entry.getValue(),
+                    keyword, priceFilter, false, null);
+            if (summary != null) {
+                summaries.add(summary);
             }
-            List<OrderItem> productItems = entry.getValue();
-            int pendingCount = (int) productItems.stream().filter(i -> i.getDealPrice() == null).count();
-            int totalCount = productItems.size();
-            boolean allPriced = pendingCount == 0;
-            if ("UNPRICED".equalsIgnoreCase(priceFilter) && allPriced) {
-                continue;
+        }
+        for (Map.Entry<String, List<OrderItem>> entry : customGrouped.entrySet()) {
+            PricingProductSummaryVO summary = buildProductSummary(
+                    entry.getValue().get(0).getProductId(),
+                    entry.getKey(),
+                    entry.getValue(),
+                    keyword,
+                    priceFilter,
+                    true,
+                    entry.getKey());
+            if (summary != null) {
+                summaries.add(summary);
             }
-            if ("PRICED".equalsIgnoreCase(priceFilter) && !allPriced) {
-                continue;
-            }
-            BigDecimal totalQty = productItems.stream()
-                    .map(this::itemQuantity)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            String unit = productItems.get(0).getUnit();
-            summaries.add(PricingProductSummaryVO.builder()
-                    .productId(entry.getKey())
-                    .productName(product.getName())
-                    .unit(unit)
-                    .pendingCount(pendingCount)
-                    .totalCount(totalCount)
-                    .totalQty(totalQty)
-                    .allPriced(allPriced)
-                    .build());
         }
 
         summaries.sort(Comparator
@@ -193,17 +185,60 @@ public class OrderPricingService {
         return summaries;
     }
 
-    public PricingProductDetailVO getProductPricingDetail(Long productId, LocalDate deliveryFrom, LocalDate deliveryTo,
-                                                        String priceFilter) {
+    private PricingProductSummaryVO buildProductSummary(Long productId, String productName, List<OrderItem> productItems,
+                                                        String keyword, String priceFilter, boolean customItem,
+                                                        String customName) {
+        if (StringUtils.hasText(keyword) && !productName.contains(keyword.trim())) {
+            return null;
+        }
+        int pendingCount = (int) productItems.stream().filter(item -> !isPricingComplete(item)).count();
+        int totalCount = productItems.size();
+        boolean allPriced = pendingCount == 0;
+        if ("UNPRICED".equalsIgnoreCase(priceFilter) && allPriced) {
+            return null;
+        }
+        if ("PRICED".equalsIgnoreCase(priceFilter) && !allPriced) {
+            return null;
+        }
+        BigDecimal totalQty = productItems.stream()
+                .map(this::itemQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String unit = productItems.get(0).getUnit();
+        return PricingProductSummaryVO.builder()
+                .productId(productId)
+                .customItem(customItem)
+                .customName(customName)
+                .productName(productName)
+                .unit(unit)
+                .pendingCount(pendingCount)
+                .totalCount(totalCount)
+                .totalQty(totalQty)
+                .allPriced(allPriced)
+                .build();
+    }
+
+    public PricingProductDetailVO getProductPricingDetail(Long productId, String customName, LocalDate deliveryFrom,
+                                                          LocalDate deliveryTo, String priceFilter) {
         RoleChecker.requireBoss();
         PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, priceFilter);
+        if (StringUtils.hasText(customName)) {
+            return buildCustomProductPricingDetail(customName.trim(), workspace);
+        }
         return buildProductPricingDetail(productId, workspace);
     }
 
-    public PricingProductDetailVO fetchProductReferencePrices(Long productId, LocalDate deliveryFrom,
+    public PricingProductDetailVO getProductPricingDetail(Long productId, LocalDate deliveryFrom, LocalDate deliveryTo,
+                                                          String priceFilter) {
+        return getProductPricingDetail(productId, null, deliveryFrom, deliveryTo, priceFilter);
+    }
+
+    public PricingProductDetailVO fetchProductReferencePrices(Long productId, String customName, LocalDate deliveryFrom,
                                                               LocalDate deliveryTo, String priceFilter) {
         RoleChecker.requireBoss();
-        PricingProductDetailVO detail = getProductPricingDetail(productId, deliveryFrom, deliveryTo, priceFilter);
+        PricingProductDetailVO detail = getProductPricingDetail(productId, customName, deliveryFrom, deliveryTo, priceFilter);
+        if (Boolean.TRUE.equals(detail.getCustomItem())) {
+            return detail;
+        }
         List<PricingProductLineVO> filled = detail.getLines().stream()
                 .map(line -> line.getDealPrice() != null
                         ? line
@@ -218,7 +253,10 @@ public class OrderPricingService {
                         .pickRemark(line.getPickRemark())
                         .quantity(line.getQuantity())
                         .unit(line.getUnit())
+                        .customItem(line.getCustomItem())
+                        .customName(line.getCustomName())
                         .referencePrice(line.getReferencePrice())
+                        .costPrice(line.getCostPrice())
                         .dealPrice(line.getReferencePrice())
                         .priced(false)
                         .build())
@@ -227,44 +265,132 @@ public class OrderPricingService {
         return detail;
     }
 
+    public PricingProductDetailVO fetchProductReferencePrices(Long productId, LocalDate deliveryFrom,
+                                                              LocalDate deliveryTo, String priceFilter) {
+        return fetchProductReferencePrices(productId, null, deliveryFrom, deliveryTo, priceFilter);
+    }
+
     @Transactional
-    public PricingProductDetailVO submitProductPricing(Long productId, PricingProductSubmitRequest request,
-                                                       LocalDate deliveryFrom, LocalDate deliveryTo) {
+    public PricingProductDetailVO submitProductPricing(Long productId, String customName,
+                                                       PricingProductSubmitRequest request,
+                                                       LocalDate deliveryFrom, LocalDate deliveryTo,
+                                                       String priceFilter) {
         RoleChecker.requireBoss();
-        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, "UNPRICED");
-        List<OrderItem> productItems = workspace.items().stream()
-                .filter(item -> Objects.equals(item.getProductId(), productId))
-                .toList();
+        String filter = StringUtils.hasText(priceFilter) ? priceFilter : "ALL";
+        PricingWorkspace workspace = loadPricingWorkspace(deliveryFrom, deliveryTo, filter);
+        List<OrderItem> productItems = filterProductItems(productId, customName, workspace);
         if (productItems.isEmpty()) {
-            throw BusinessException.of(404, "该商品暂无待录价明细，请刷新后重试");
+            throw BusinessException.of(404, "该商品暂无录价明细，请刷新后重试");
         }
 
         Set<Long> allowedItemIds = productItems.stream().map(OrderItem::getId).collect(Collectors.toSet());
+        Map<Long, Product> productMap = loadProductMap(productItems);
 
         Set<Long> affectedOrderIds = new HashSet<>();
         for (PricingItemRequest priceReq : request.getItems()) {
             if (priceReq.getItemId() == null || !allowedItemIds.contains(priceReq.getItemId())) {
                 throw BusinessException.of(400, "存在无效的订单明细");
             }
-            if (priceReq.getDealPrice() == null) {
-                throw BusinessException.of(400, "请填写成交单价");
-            }
-            if (priceReq.getDealPrice().compareTo(BigDecimal.ZERO) < 0) {
-                throw BusinessException.of(400, "成交单价不能为负数");
-            }
             OrderItem item = workspace.itemMap().get(priceReq.getItemId());
-            BigDecimal qty = itemQuantity(item);
-            BigDecimal subtotal = priceReq.getDealPrice().multiply(qty).setScale(2, RoundingMode.HALF_UP);
-            item.setDealPrice(priceReq.getDealPrice());
-            item.setSubtotalAmount(subtotal);
+            applyPricingFromRequest(item, productMap.get(item.getProductId()), priceReq);
             orderItemMapper.updateById(item);
             affectedOrderIds.add(item.getOrderId());
         }
 
         for (Long orderId : affectedOrderIds) {
-            tryFinalizeOrder(orderId);
+            Order order = workspace.orderMap().get(orderId);
+            if (order != null && order.getAmount() == null) {
+                tryFinalizeOrder(orderId);
+            } else {
+                recalculateOrderAmount(orderId);
+            }
         }
-        return buildProductPricingDetail(productId, loadPricingWorkspace(deliveryFrom, deliveryTo, "UNPRICED"), true);
+        if (StringUtils.hasText(customName)) {
+            return buildCustomProductPricingDetail(customName.trim(),
+                    loadPricingWorkspace(deliveryFrom, deliveryTo, filter));
+        }
+        return buildProductPricingDetail(productId, loadPricingWorkspace(deliveryFrom, deliveryTo, filter), true);
+    }
+
+    public PricingProductDetailVO submitProductPricing(Long productId, PricingProductSubmitRequest request,
+                                                       LocalDate deliveryFrom, LocalDate deliveryTo,
+                                                       String priceFilter) {
+        return submitProductPricing(productId, null, request, deliveryFrom, deliveryTo, priceFilter);
+    }
+
+    private PricingProductDetailVO buildCustomProductPricingDetail(String customName, PricingWorkspace workspace) {
+        List<OrderItem> productItems = workspace.items().stream()
+                .filter(item -> OrderItemDisplay.isCustomItem(item)
+                        && customName.equals(item.getOriginalText().trim()))
+                .toList();
+        if (productItems.isEmpty()) {
+            throw BusinessException.of(404, "该代采商品暂无待录价明细，请调整配送日期后刷新");
+        }
+        List<PricingProductLineVO> lines = buildProductLines(productItems, workspace);
+        Set<Long> orderIds = productItems.stream().map(OrderItem::getOrderId).collect(Collectors.toSet());
+        BigDecimal totalQty = productItems.stream().map(this::itemQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return PricingProductDetailVO.builder()
+                .productId(productItems.get(0).getProductId())
+                .customItem(true)
+                .customName(customName)
+                .productName(customName)
+                .unit(productItems.get(0).getUnit())
+                .orderCount(orderIds.size())
+                .totalQty(totalQty)
+                .lines(lines)
+                .build();
+    }
+
+    private List<OrderItem> filterProductItems(Long productId, String customName, PricingWorkspace workspace) {
+        if (StringUtils.hasText(customName)) {
+            String name = customName.trim();
+            return workspace.items().stream()
+                    .filter(item -> OrderItemDisplay.isCustomItem(item)
+                            && name.equals(item.getOriginalText().trim())
+                            && Objects.equals(item.getProductId(), productId))
+                    .toList();
+        }
+        return workspace.items().stream()
+                .filter(item -> Objects.equals(item.getProductId(), productId)
+                        && !OrderItemDisplay.isCustomItem(item))
+                .toList();
+    }
+
+    private void applyPricingFromRequest(OrderItem item, Product product, PricingItemRequest priceReq) {
+        if (priceReq == null || priceReq.getDealPrice() == null) {
+            throw BusinessException.of(400, "请为所有商品填写成交单价");
+        }
+        if (priceReq.getDealPrice().compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.of(400, "成交单价不能为负数");
+        }
+        if (OrderItemDisplay.isCustomItem(item)) {
+            if (priceReq.getCostPrice() == null) {
+                throw BusinessException.of(400, "代采商品请填写成本价");
+            }
+            if (priceReq.getCostPrice().compareTo(BigDecimal.ZERO) < 0) {
+                throw BusinessException.of(400, "成本价不能为负数");
+            }
+            item.setCostPrice(priceReq.getCostPrice());
+        }
+        BigDecimal qty = itemQuantity(item);
+        item.setDealPrice(priceReq.getDealPrice());
+        item.setSubtotalAmount(priceReq.getDealPrice().multiply(qty).setScale(2, RoundingMode.HALF_UP));
+    }
+
+    private boolean isPricingComplete(OrderItem item) {
+        if (OrderItemDisplay.isCustomItem(item)) {
+            return item.getDealPrice() != null && item.getCostPrice() != null;
+        }
+        return item.getDealPrice() != null;
+    }
+
+    private Map<Long, Product> loadProductMap(List<OrderItem> items) {
+        Set<Long> productIds = items.stream().map(OrderItem::getProductId).collect(Collectors.toSet());
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        return productMapper.selectBatchIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, Function.identity()));
     }
 
     private PricingProductDetailVO buildProductPricingDetail(Long productId, PricingWorkspace workspace) {
@@ -274,7 +400,8 @@ public class OrderPricingService {
     private PricingProductDetailVO buildProductPricingDetail(Long productId, PricingWorkspace workspace,
                                                              boolean allowEmpty) {
         List<OrderItem> productItems = workspace.items().stream()
-                .filter(item -> Objects.equals(item.getProductId(), productId))
+                .filter(item -> Objects.equals(item.getProductId(), productId)
+                        && !OrderItemDisplay.isCustomItem(item))
                 .toList();
         if (productItems.isEmpty()) {
             Product product = productMapper.selectById(productId);
@@ -328,6 +455,8 @@ public class OrderPricingService {
         }
         order.setStatus(OrderStatus.COMPLETED);
         orderMapper.updateById(order);
+        orderEventAfterCommitPublisher.publishAfterCommit(
+                OrderEventMessage.orderPricedPublished(order.getMerchantId(), order.getId()));
         return toDetailVO(order);
     }
 
@@ -345,7 +474,7 @@ public class OrderPricingService {
                 .customerId(order.getCustomerId())
                 .customerName(resolveOrderCustomerName(order, null))
                 .status(order.getStatus())
-                .statusLabel(statusLabel(order.getStatus()))
+                .statusLabel(OrderFlowStatus.flowStatusLabel(order, order.getAmount() == null, 0, (int) itemCount))
                 .deliveryDate(order.getDeliveryDate())
                 .deliveryAddressShort(order.getDeliveryAddressShort())
                 .amount(order.getAmount())
@@ -373,15 +502,20 @@ public class OrderPricingService {
 
         List<OrderPricingItemVO> itemVOs = items.stream().map(item -> {
             Product product = productMap.get(item.getProductId());
-            BigDecimal refPrice = referencePrices.get(item.getProductId());
+            BigDecimal refPrice = OrderItemDisplay.isCustomItem(item)
+                    ? null
+                    : referencePrices.get(item.getProductId());
             return OrderPricingItemVO.builder()
                     .id(item.getId())
                     .productId(item.getProductId())
-                    .productName(product != null ? product.getName() : "未知商品")
+                    .customItem(OrderItemDisplay.isCustomItem(item))
+                    .customName(OrderItemDisplay.customName(item))
+                    .productName(OrderItemDisplay.productName(item, product))
                     .orderQty(item.getOrderQty())
                     .actualQty(item.getActualQty())
                     .unit(item.getUnit())
                     .referencePrice(refPrice)
+                    .costPrice(item.getCostPrice())
                     .dealPrice(item.getDealPrice() != null ? item.getDealPrice() : refPrice)
                     .subtotalAmount(item.getSubtotalAmount())
                     .shortageFlag(item.getShortageFlag())
@@ -389,18 +523,27 @@ public class OrderPricingService {
                     .build();
         }).toList();
 
+        int customItemCount = (int) items.stream().filter(OrderItemDisplay::isCustomItem).count();
+        boolean priceIncomplete = order.getAmount() == null
+                || items.stream().anyMatch(item -> !isPricingComplete(item));
+        int pickedItemCount = (int) items.stream()
+                .filter(item -> item.getShortageFlag() != null && item.getShortageFlag() == 1
+                        || item.getActualQty() != null)
+                .count();
+
         return OrderPricingVO.builder()
                 .id(order.getId())
                 .orderNo(order.getOrderNo())
                 .customerId(order.getCustomerId())
                 .customerName(resolveOrderCustomerName(order, null))
                 .status(order.getStatus())
-                .statusLabel(statusLabel(order.getStatus()))
+                .statusLabel(OrderFlowStatus.flowStatusLabel(order, priceIncomplete, pickedItemCount, items.size()))
                 .deliveryDate(order.getDeliveryDate())
                 .deliveryAddressShort(order.getDeliveryAddressShort())
                 .amount(order.getAmount())
                 .remark(order.getRemark())
                 .createdAt(order.getCreatedAt())
+                .customItemCount(customItemCount)
                 .items(itemVOs)
                 .build();
     }
@@ -425,9 +568,33 @@ public class OrderPricingService {
         }
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getOrderId, orderId));
-        if (items.isEmpty() || items.stream().anyMatch(item -> item.getDealPrice() == null)) {
+        if (items.isEmpty() || items.stream().anyMatch(item -> !isPricingComplete(item))) {
             return;
         }
+        applyOrderAmount(order, items);
+        order.setStatus(OrderStatus.PRICED);
+        orderMapper.updateById(order);
+    }
+
+    private void recalculateOrderAmount(Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null || order.getAmount() == null) {
+            return;
+        }
+        if (!PRICEABLE_STATUSES.contains(order.getStatus())
+                && !PRICED_ORDER_STATUSES.contains(order.getStatus())) {
+            return;
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId));
+        if (items.isEmpty() || items.stream().anyMatch(item -> !isPricingComplete(item))) {
+            return;
+        }
+        applyOrderAmount(order, items);
+        orderMapper.updateById(order);
+    }
+
+    private void applyOrderAmount(Order order, List<OrderItem> items) {
         BigDecimal totalAmount = items.stream()
                 .map(item -> item.getSubtotalAmount() != null
                         ? item.getSubtotalAmount()
@@ -435,8 +602,6 @@ public class OrderPricingService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         order.setAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
         order.setReceivableAmount(order.getAmount());
-        order.setStatus(OrderStatus.PRICED);
-        orderMapper.updateById(order);
     }
 
     private PricingWorkspace loadPricingWorkspace(LocalDate deliveryFrom, LocalDate deliveryTo, String priceFilter) {
@@ -528,7 +693,9 @@ public class OrderPricingService {
                 continue;
             }
             Product product = workspace.productMap().get(item.getProductId());
-            BigDecimal referencePrice = resolveReferencePrice(order, item, product, referencePriceCache);
+            BigDecimal referencePrice = OrderItemDisplay.isCustomItem(item)
+                    ? null
+                    : resolveReferencePrice(order, item, product, referencePriceCache);
             lines.add(PricingProductLineVO.builder()
                     .itemId(item.getId())
                     .orderId(order.getId())
@@ -540,9 +707,12 @@ public class OrderPricingService {
                     .pickRemark(item.getPickRemark())
                     .quantity(itemQuantity(item))
                     .unit(item.getUnit())
+                    .customItem(OrderItemDisplay.isCustomItem(item))
+                    .customName(OrderItemDisplay.customName(item))
                     .referencePrice(referencePrice)
+                    .costPrice(item.getCostPrice())
                     .dealPrice(item.getDealPrice())
-                    .priced(item.getDealPrice() != null)
+                    .priced(isPricingComplete(item))
                     .build());
         }
         return lines;
@@ -595,27 +765,5 @@ public class OrderPricingService {
             Map<Long, Product> productMap,
             Map<Long, Customer> customerMap
     ) {
-    }
-
-    private String statusLabel(String status) {
-        if (Objects.equals(status, OrderStatus.PENDING_CONFIRM)) {
-            return "待确认";
-        }
-        if (Objects.equals(status, OrderStatus.PENDING_PICK)) {
-            return "待分拣";
-        }
-        if (Objects.equals(status, OrderStatus.PICKED)) {
-            return "已拣完";
-        }
-        if (Objects.equals(status, OrderStatus.PENDING_PRICE)) {
-            return "待录价";
-        }
-        if (Objects.equals(status, OrderStatus.PRICED)) {
-            return "已录价";
-        }
-        if (Objects.equals(status, OrderStatus.COMPLETED)) {
-            return "已完成";
-        }
-        return status;
     }
 }

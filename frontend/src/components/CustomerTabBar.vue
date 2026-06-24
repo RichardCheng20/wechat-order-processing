@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import AppIcon from './AppIcon.vue'
-import { switchCustomerTab, type CustomerTab } from '../utils/customer-nav'
+import { switchCustomerTab, type CustomerTab } from '@/utils/customer-nav'
 
 defineProps<{
   active: CustomerTab

@@ -9,7 +9,6 @@ import java.math.BigDecimal;
 @Data
 public class OrderItemCreateRequest {
 
-    @NotNull(message = "商品ID不能为空")
     private Long productId;
 
     @NotNull(message = "数量不能为空")
@@ -17,4 +16,6 @@ public class OrderItemCreateRequest {
     private BigDecimal orderQty;
     private String unit;
     private String pickRemark;
+    /** 档口暂无、需老板配货的商品名称 */
+    private String customName;
 }

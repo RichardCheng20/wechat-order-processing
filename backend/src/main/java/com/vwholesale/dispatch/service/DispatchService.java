@@ -14,9 +14,12 @@ import com.vwholesale.dispatch.entity.DispatchLog;
 import com.vwholesale.dispatch.mapper.DispatchLogMapper;
 import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
+import com.vwholesale.order.support.OrderItemDisplay;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
 import com.vwholesale.order.service.OrderItemStockService;
+import com.vwholesale.merchant.entity.Merchant;
+import com.vwholesale.merchant.mapper.MerchantMapper;
 import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.worker.entity.Worker;
@@ -29,7 +32,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -49,6 +51,7 @@ public class DispatchService {
     private final OrderItemMapper orderItemMapper;
     private final CustomerMapper customerMapper;
     private final ProductMapper productMapper;
+    private final MerchantMapper merchantMapper;
     private final DispatchLogMapper dispatchLogMapper;
     private final WorkerService workerService;
     private final OrderItemStockService orderItemStockService;
@@ -87,19 +90,42 @@ public class DispatchService {
         return toWorkerTaskVO(order, true);
     }
 
-    public List<WorkerTaskVO> listTasksForWorker() {
-        Long workerId = requireWorkerId();
-        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+    public List<WorkerTaskVO> listTasksForWorker(LocalDate dateFrom, LocalDate dateTo) {
+        requireWorkerId();
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getMerchantId, merchantContext.currentMerchantId())
-                .eq(Order::getAssignedWorkerId, workerId)
-                .in(Order::getStatus, OrderStatus.PENDING_PICK, OrderStatus.PICKING, OrderStatus.PICKED)
+                .in(Order::getStatus, OrderStatus.PENDING_PICK, OrderStatus.PICKING)
                 .orderByAsc(Order::getDeliveryDate)
-                .orderByDesc(Order::getId));
+                .orderByDesc(Order::getId);
+        applyDeliveryDateFilter(wrapper, dateFrom, dateTo);
+        List<Order> orders = orderMapper.selectList(wrapper);
         return orders.stream().map(order -> toWorkerTaskVO(order, false)).toList();
     }
 
+    public List<WorkerTaskVO> listPickedTasksForWorker(LocalDate dateFrom, LocalDate dateTo) {
+        Long workerId = requireWorkerId();
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getMerchantId, merchantContext.currentMerchantId())
+                .eq(Order::getPickedByWorkerId, workerId)
+                .notIn(Order::getStatus, OrderStatus.PENDING_PICK, OrderStatus.PICKING)
+                .orderByDesc(Order::getUpdatedAt)
+                .orderByDesc(Order::getId);
+        applyDeliveryDateFilter(wrapper, dateFrom, dateTo);
+        List<Order> orders = orderMapper.selectList(wrapper);
+        return orders.stream().map(order -> toWorkerTaskVO(order, false)).toList();
+    }
+
+    private void applyDeliveryDateFilter(LambdaQueryWrapper<Order> wrapper, LocalDate dateFrom, LocalDate dateTo) {
+        if (dateFrom == null) {
+            return;
+        }
+        LocalDate end = dateTo != null ? dateTo : dateFrom;
+        wrapper.ge(Order::getDeliveryDate, dateFrom);
+        wrapper.le(Order::getDeliveryDate, end);
+    }
+
     public WorkerTaskVO getTaskDetail(Long orderId) {
-        Order order = getWorkerOrderOrThrow(orderId);
+        Order order = getWorkerReadableOrderOrThrow(orderId);
         return toWorkerTaskVO(order, true);
     }
 
@@ -136,25 +162,25 @@ public class DispatchService {
             item.setPickRemark(request.getPickRemark());
         }
         orderItemMapper.updateById(item);
-        orderItemStockService.syncPickStock(item);
         return toWorkerTaskVO(order, true);
     }
 
     @Transactional
     public WorkerTaskVO fillActualQty(Long orderId) {
         Order order = getWorkerOrderOrThrow(orderId);
+        if (!OrderStatus.PENDING_PICK.equals(order.getStatus())
+                && !OrderStatus.PICKING.equals(order.getStatus())) {
+            throw BusinessException.of(400, "当前状态不可操作");
+        }
         if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
             order.setStatus(OrderStatus.PICKING);
             orderMapper.updateById(order);
-        } else if (!OrderStatus.PICKING.equals(order.getStatus())) {
-            throw BusinessException.of(400, "当前状态不可一键下单出库");
         }
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
         for (OrderItem item : items) {
             item.setActualQty(item.getOrderQty());
             item.setShortageFlag(0);
             orderItemMapper.updateById(item);
-            orderItemStockService.syncPickStock(item);
         }
         return toWorkerTaskVO(order, true);
     }
@@ -174,20 +200,29 @@ public class DispatchService {
     @Transactional
     public WorkerTaskVO markPicked(Long orderId) {
         Order order = getWorkerOrderOrThrow(orderId);
-        if (!OrderStatus.PICKING.equals(order.getStatus())) {
-            throw BusinessException.of(400, "只有分拣中订单可以标记已拣完");
+        if (!OrderStatus.PENDING_PICK.equals(order.getStatus())
+                && !OrderStatus.PICKING.equals(order.getStatus())) {
+            throw BusinessException.of(400, "只有待拣单订单可以标记已拣单");
+        }
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+            order.setStatus(OrderStatus.PICKING);
+            orderMapper.updateById(order);
         }
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
         for (OrderItem item : items) {
-            if (item.getActualQty() == null) {
+            if (item.getShortageFlag() != null && item.getShortageFlag() == 1) {
+                if (item.getActualQty() == null) {
+                    item.setActualQty(BigDecimal.ZERO);
+                }
+            } else if (item.getActualQty() == null) {
                 item.setActualQty(item.getOrderQty());
             } else {
                 item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
             orderItemMapper.updateById(item);
-            orderItemStockService.syncPickStock(item);
         }
         order.setStatus(OrderStatus.PICKED);
+        order.setPickedByWorkerId(requireWorkerId());
         orderMapper.updateById(order);
         return toWorkerTaskVO(order, true);
     }
@@ -205,12 +240,26 @@ public class DispatchService {
 
     private Order getWorkerOrderOrThrow(Long orderId) {
         RoleChecker.requireWorker();
-        Long workerId = requireWorkerId();
+        requireWorkerId();
         Order order = getOrderOrThrow(orderId);
-        if (!Objects.equals(order.getAssignedWorkerId(), workerId)) {
-            throw BusinessException.of(403, "无权操作该订单");
+        if (!OrderStatus.PENDING_PICK.equals(order.getStatus())
+                && !OrderStatus.PICKING.equals(order.getStatus())) {
+            throw BusinessException.of(400, "当前订单不可操作");
         }
         return order;
+    }
+
+    private Order getWorkerReadableOrderOrThrow(Long orderId) {
+        Long workerId = requireWorkerId();
+        Order order = getOrderOrThrow(orderId);
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())
+                || OrderStatus.PICKING.equals(order.getStatus())) {
+            return order;
+        }
+        if (workerId.equals(order.getPickedByWorkerId())) {
+            return order;
+        }
+        throw BusinessException.of(400, "当前订单不可查看");
     }
 
     private Long requireWorkerId() {
@@ -235,16 +284,20 @@ public class DispatchService {
     private WorkerTaskVO toWorkerTaskVO(Order order, boolean withItems) {
         Customer customer = order.getCustomerId() != null ? customerMapper.selectById(order.getCustomerId()) : null;
         String customerName = customer != null ? customer.getName() : order.getGuestCustomerName();
+        Merchant merchant = merchantMapper.selectById(order.getMerchantId());
+        String merchantName = merchant != null ? merchant.getName() : null;
         WorkerTaskVO.WorkerTaskVOBuilder builder = WorkerTaskVO.builder()
                 .id(order.getId())
                 .orderNo(order.getOrderNo())
                 .customerName(customerName != null ? customerName : "客户")
+                .merchantName(merchantName)
                 .deliveryAddressShort(order.getDeliveryAddressShort())
                 .status(order.getStatus())
                 .statusLabel(statusLabel(order.getStatus()))
                 .deliveryDate(order.getDeliveryDate())
                 .remark(order.getRemark())
-                .createdAt(order.getCreatedAt());
+                .createdAt(order.getCreatedAt())
+                .updatedAt(order.getUpdatedAt());
 
         if (!withItems) {
             long count = orderItemMapper.selectCount(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
@@ -262,7 +315,7 @@ public class DispatchService {
         List<WorkerTaskItemVO> itemVOs = items.stream().map(item -> WorkerTaskItemVO.builder()
                 .id(item.getId())
                 .productId(item.getProductId())
-                .productName(productMap.get(item.getProductId()) != null ? productMap.get(item.getProductId()).getName() : "未知商品")
+                .productName(OrderItemDisplay.productName(item, productMap.get(item.getProductId())))
                 .orderQty(item.getOrderQty())
                 .actualQty(item.getActualQty())
                 .unit(item.getUnit())
@@ -282,6 +335,12 @@ public class DispatchService {
             case OrderStatus.PICKING -> "分拣中";
             case OrderStatus.PICKED -> "已拣完";
             case OrderStatus.PENDING_PRICE -> "待录价";
+            case OrderStatus.PRICED -> "已录价";
+            case OrderStatus.PENDING_CONFIRM -> "待确认";
+            case OrderStatus.DELIVERING -> "配送中";
+            case OrderStatus.DELIVERED -> "已送达";
+            case OrderStatus.COMPLETED -> "已完成";
+            case OrderStatus.CANCELLED -> "已取消";
             default -> status;
         };
     }

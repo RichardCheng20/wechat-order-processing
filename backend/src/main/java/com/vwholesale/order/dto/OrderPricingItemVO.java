@@ -15,7 +15,10 @@ public class OrderPricingItemVO {
     private BigDecimal orderQty;
     private BigDecimal actualQty;
     private String unit;
+    private Boolean customItem;
+    private String customName;
     private BigDecimal referencePrice;
+    private BigDecimal costPrice;
     private BigDecimal dealPrice;
     private BigDecimal subtotalAmount;
     private Integer shortageFlag;

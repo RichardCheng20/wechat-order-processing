@@ -34,10 +34,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchBindStatus } from '../../../api/customer'
-import CustomerTabBar from '../../../components/CustomerTabBar.vue'
-import { switchCustomerTab } from '../../../utils/customer-nav'
-import { useUserStore } from '../../../stores/user'
+import { fetchBindStatus } from '@common/api/customer'
+import CustomerTabBar from '@/components/CustomerTabBar.vue'
+import { switchCustomerTab } from '@common/utils/customer-nav'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const bound = ref(false)
@@ -59,7 +59,7 @@ const bindStatusText = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   try {

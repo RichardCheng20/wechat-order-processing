@@ -11,6 +11,8 @@ import java.util.List;
 public class PricingProductDetailVO {
 
     private Long productId;
+    private Boolean customItem;
+    private String customName;
     private String productName;
     private String unit;
     private Integer orderCount;

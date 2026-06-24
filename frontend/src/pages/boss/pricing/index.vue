@@ -47,12 +47,13 @@
       <scroll-view scroll-y class="product-sidebar">
         <view
           v-for="item in products"
-          :key="item.productId"
+          :key="productSummaryKey(item)"
           class="product-item"
-          :class="{ active: selectedProductId === item.productId }"
-          @tap="selectProduct(item.productId)"
+          :class="{ active: selectedKey === productSummaryKey(item) }"
+          @tap="selectProduct(item)"
         >
           <text class="product-name">{{ item.productName }}</text>
+          <text v-if="item.customItem" class="custom-badge">代采</text>
           <view v-if="item.pendingCount > 0" class="badge">{{ item.pendingCount }}</view>
         </view>
       </scroll-view>
@@ -69,14 +70,13 @@
         <template v-else>
           <view class="detail-head">
             <text class="summary">
+              <text v-if="detail.customItem" class="custom-head-tag">代采</text>
               共{{ detail.orderCount }}笔订单，{{ formatQty(detail.totalQty) }}{{ detail.unit }}
             </text>
+            <view v-if="detail.customItem" class="custom-tip">请同时录入成本价与售价</view>
             <view class="head-actions">
-              <template v-if="!isReadonlyPricing">
-                <view class="action-btn outline" @tap="handleFetchPrices">获取价格</view>
-                <view class="action-btn primary" @tap="handleSubmit">录价</view>
-              </template>
-              <text v-else class="readonly-hint">已全部录价，可查看或分享订单</text>
+              <view v-if="!detail.customItem" class="action-btn outline" @tap="handleFetchPrices">获取价格</view>
+              <view class="action-btn primary" @tap="handleSubmit">{{ submitButtonLabel }}</view>
             </view>
           </view>
 
@@ -96,13 +96,38 @@
             >
               <view class="line-top">
                 <text class="customer-name">{{ line.customerName || '未知客户' }}</text>
+                <text v-if="line.customItem" class="custom-line-tag">代采</text>
                 <text v-if="line.priced" class="priced-tag">已录</text>
               </view>
               <text class="line-meta">配送：{{ formatDelivery(line.deliveryDate) }}</text>
               <text class="line-meta remark">备注：{{ displayLineRemark(line) }}</text>
               <view class="line-bottom">
                 <text class="qty">{{ formatQty(line.quantity) }}{{ line.unit }}</text>
-                <view class="price-input-wrap">
+                <view v-if="line.customItem" class="dual-price">
+                  <view class="price-input-wrap">
+                    <text class="mini-label">成本</text>
+                    <view
+                      class="price-input cost"
+                      :class="{ active: activeLine?.itemId === line.itemId && showKeypad && keyboardMode === 'cost' }"
+                      @tap="focusCostLine(line)"
+                    >
+                      <text v-if="displayCost(line.itemId)" class="price-value">{{ displayCost(line.itemId) }}</text>
+                      <text v-else class="price-placeholder">成本</text>
+                    </view>
+                  </view>
+                  <view class="price-input-wrap">
+                    <text class="mini-label">售价</text>
+                    <view
+                      class="price-input"
+                      :class="{ active: activeLine?.itemId === line.itemId && showKeypad && keyboardMode === 'deal' }"
+                      @tap="focusLine(line, 'deal')"
+                    >
+                      <text v-if="displayPrice(line.itemId)" class="price-value">{{ displayPrice(line.itemId) }}</text>
+                      <text v-else class="price-placeholder">售价</text>
+                    </view>
+                  </view>
+                </view>
+                <view v-else class="price-input-wrap">
                   <view
                     class="price-input"
                     :class="{ active: activeLine?.itemId === line.itemId && showKeypad }"
@@ -135,7 +160,7 @@
             <text class="edit-qty">{{ formatQty(activeLine.quantity) }}{{ activeLine.unit }}</text>
           </view>
           <view class="edit-price-wrap">
-            <text class="edit-label">单价</text>
+            <text class="edit-label">{{ keyboardMode === 'cost' ? '成本价' : '单价' }}</text>
             <text class="edit-price">{{ keyboardDraft || '0' }}</text>
             <text class="edit-unit">元/{{ activeLine.unit }}</text>
           </view>
@@ -189,26 +214,35 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, provide, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import {
   displayLineRemark,
   fetchPricingProducts,
   fetchProductPricingDetail,
   fetchProductReferencePrices,
+  productSummaryKey,
   submitProductPricing,
   type PricingProductDetail,
   type PricingProductLine,
   type PricingProductSummary,
-} from '../../../api/pricing'
-import AppIcon from '../../../components/AppIcon.vue'
-import BossTabbar from '../../../components/boss-tabbar/index.vue'
-import { useUserStore } from '../../../stores/user'
+  type PricingSubmitItem,
+} from '@common/api/pricing'
+import AppIcon from '@/components/AppIcon.vue'
+import BossTabbar from '@/components/boss-tabbar/index.vue'
+import { useUserStore } from '@common/stores/user'
+import { useBossOrderAlertOnShow } from '@common/utils/boss-order-alert'
+import { useBossAlertStore } from '@common/stores/bossAlert'
 
 const userStore = useUserStore()
+const bossAlert = useBossAlertStore()
+provide('bossAlert', bossAlert)
+const { onBossPageShow } = useBossOrderAlertOnShow()
 const products = ref<PricingProductSummary[]>([])
 const detail = ref<PricingProductDetail | null>(null)
 const selectedProductId = ref(0)
+const selectedKey = ref('')
+const selectedCustomName = ref('')
 const loading = ref(false)
 const detailLoading = ref(false)
 const submitting = ref(false)
@@ -218,7 +252,9 @@ const quickDate = ref<'week' | 'today' | 'tomorrow'>('week')
 const deliveryFrom = ref('')
 const deliveryTo = ref('')
 const priceMap = reactive<Record<number, string>>({})
+const costPriceMap = reactive<Record<number, string>>({})
 const showKeypad = ref(false)
+const keyboardMode = ref<'cost' | 'deal'>('deal')
 const keyboardDraft = ref('')
 const activeLine = ref<PricingProductLine | null>(null)
 const scrollIntoViewId = ref('')
@@ -242,11 +278,13 @@ const emptyText = computed(() => {
   return '暂无录价商品'
 })
 
-const isReadonlyPricing = computed(() => {
+const isEditingPriced = computed(() => {
   if (priceFilter.value === 'PRICED') return true
   const lines = detail.value?.lines || []
   return lines.length > 0 && lines.every((line) => line.priced)
 })
+
+const submitButtonLabel = computed(() => (isEditingPriced.value ? '保存修改' : '录价'))
 
 const queryOptions = computed(() => ({
   keyword: keyword.value.trim() || undefined,
@@ -257,12 +295,13 @@ const queryOptions = computed(() => ({
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (!deliveryFrom.value) {
     applyWeekRange(new Date())
   }
+  await onBossPageShow()
   await reloadProducts()
 })
 
@@ -274,18 +313,28 @@ async function refreshSidebar() {
   }
 }
 
+const detailQuery = computed(() => ({
+  ...queryOptions.value,
+  customName: selectedCustomName.value || undefined,
+}))
+
 async function reloadProducts() {
   loading.value = true
   try {
     products.value = await fetchPricingProducts(queryOptions.value)
     if (products.value.length === 0) {
       selectedProductId.value = 0
+      selectedKey.value = ''
+      selectedCustomName.value = ''
       detail.value = null
       return
     }
-    const stillExists = products.value.some((p) => p.productId === selectedProductId.value)
+    const stillExists = products.value.some((p) => productSummaryKey(p) === selectedKey.value)
     if (!stillExists) {
-      selectedProductId.value = products.value[0].productId
+      const first = products.value[0]
+      selectedKey.value = productSummaryKey(first)
+      selectedProductId.value = first.productId
+      selectedCustomName.value = first.customItem && first.customName ? first.customName : ''
     }
     await loadDetail(selectedProductId.value)
   } catch (err) {
@@ -302,11 +351,17 @@ async function loadDetail(productId: number) {
   const seq = ++detailRequestSeq
   detailLoading.value = true
   try {
-    const data = await fetchProductPricingDetail(productId, queryOptions.value)
+    const data = await fetchProductPricingDetail(productId, detailQuery.value)
     if (seq !== detailRequestSeq) return
     detail.value = data
     selectedProductId.value = data.productId
-    syncPriceMap(data.lines)
+    selectedCustomName.value = data.customItem && data.customName ? data.customName : ''
+    selectedKey.value = productSummaryKey({
+      productId: data.productId,
+      customItem: data.customItem,
+      customName: data.customName,
+    })
+    syncPriceMap(data.lines || [])
   } catch (err) {
     if (seq !== detailRequestSeq) return
     detail.value = null
@@ -320,7 +375,9 @@ async function loadDetail(productId: number) {
 
 function syncPriceMap(lines: PricingProductLine[]) {
   const preserved = { ...priceMap }
+  const preservedCost = { ...costPriceMap }
   Object.keys(priceMap).forEach((key) => delete priceMap[Number(key)])
+  Object.keys(costPriceMap).forEach((key) => delete costPriceMap[Number(key)])
   for (const line of lines) {
     const draft = preserved[line.itemId]
     if (draft != null && draft !== '') {
@@ -328,14 +385,23 @@ function syncPriceMap(lines: PricingProductLine[]) {
     } else {
       priceMap[line.itemId] = line.dealPrice != null ? String(line.dealPrice) : ''
     }
+    const costDraft = preservedCost[line.itemId]
+    if (costDraft != null && costDraft !== '') {
+      costPriceMap[line.itemId] = costDraft
+    } else {
+      costPriceMap[line.itemId] = line.costPrice != null ? String(line.costPrice) : ''
+    }
   }
 }
 
-function selectProduct(productId: number) {
-  if (selectedProductId.value === productId) return
+function selectProduct(item: PricingProductSummary) {
+  const key = productSummaryKey(item)
+  if (selectedKey.value === key) return
   closeKeypad()
-  selectedProductId.value = productId
-  loadDetail(productId)
+  selectedKey.value = key
+  selectedProductId.value = item.productId
+  selectedCustomName.value = item.customItem && item.customName ? item.customName : ''
+  loadDetail(item.productId)
 }
 
 function switchPriceTab(value: 'ALL' | 'UNPRICED' | 'PRICED') {
@@ -369,17 +435,23 @@ function setTomorrow() {
   reloadProducts()
 }
 
-function buildSubmitItems(lines: PricingProductLine[]) {
+function buildSubmitItems(lines: PricingProductLine[]): PricingSubmitItem[] {
   return lines
-    .map((line) => ({
-      itemId: line.itemId,
-      dealPrice: Number(priceMap[line.itemId] ?? line.dealPrice),
-    }))
+    .map((line) => {
+      const item: PricingSubmitItem = {
+        itemId: line.itemId,
+        dealPrice: Number(priceMap[line.itemId] ?? line.dealPrice),
+      }
+      if (line.customItem) {
+        item.costPrice = Number(costPriceMap[line.itemId] ?? line.costPrice)
+      }
+      return item
+    })
     .filter((item) => item.dealPrice > 0)
 }
 
 async function ensureFreshDetail(productId: number) {
-  const data = await fetchProductPricingDetail(productId, queryOptions.value)
+  const data = await fetchProductPricingDetail(productId, detailQuery.value)
   detail.value = data
   selectedProductId.value = data.productId
   return data
@@ -403,10 +475,21 @@ function displayPrice(itemId: number) {
   return priceMap[itemId] ?? ''
 }
 
-function focusLine(line: PricingProductLine) {
-  if (isReadonlyPricing.value || line.priced) return
+function displayCost(itemId: number) {
+  if (activeLine.value?.itemId === itemId && showKeypad.value && keyboardMode.value === 'cost') {
+    return keyboardDraft.value
+  }
+  return costPriceMap[itemId] ?? ''
+}
+
+function focusCostLine(line: PricingProductLine) {
+  focusLine(line, 'cost')
+}
+
+function focusLine(line: PricingProductLine, mode: 'cost' | 'deal' = 'deal') {
   activeLine.value = line
-  keyboardDraft.value = priceMap[line.itemId] ?? ''
+  keyboardMode.value = mode
+  keyboardDraft.value = mode === 'cost' ? (costPriceMap[line.itemId] ?? '') : (priceMap[line.itemId] ?? '')
   showKeypad.value = true
   scrollIntoViewId.value = ''
   void nextTick(() => {
@@ -416,7 +499,11 @@ function focusLine(line: PricingProductLine) {
 
 function closeKeypad() {
   if (activeLine.value) {
-    priceMap[activeLine.value.itemId] = keyboardDraft.value
+    if (keyboardMode.value === 'cost') {
+      costPriceMap[activeLine.value.itemId] = keyboardDraft.value
+    } else {
+      priceMap[activeLine.value.itemId] = keyboardDraft.value
+    }
   }
   showKeypad.value = false
   activeLine.value = null
@@ -434,27 +521,58 @@ function inputKey(key: string) {
     val += key
   }
   keyboardDraft.value = val
-  priceMap[activeLine.value.itemId] = val
+  if (keyboardMode.value === 'cost') {
+    costPriceMap[activeLine.value.itemId] = val
+  } else {
+    priceMap[activeLine.value.itemId] = val
+  }
 }
 
 function backspace() {
   if (!activeLine.value) return
   keyboardDraft.value = keyboardDraft.value.slice(0, -1)
-  priceMap[activeLine.value.itemId] = keyboardDraft.value
+  if (keyboardMode.value === 'cost') {
+    costPriceMap[activeLine.value.itemId] = keyboardDraft.value
+  } else {
+    priceMap[activeLine.value.itemId] = keyboardDraft.value
+  }
 }
 
 function clearDraft() {
   if (!activeLine.value) return
   keyboardDraft.value = ''
-  priceMap[activeLine.value.itemId] = ''
+  if (keyboardMode.value === 'cost') {
+    costPriceMap[activeLine.value.itemId] = ''
+  } else {
+    priceMap[activeLine.value.itemId] = ''
+  }
 }
 
 async function confirmKeypad() {
   if (!activeLine.value || !detail.value?.productId || submitting.value) return
-  const dealPrice = Number(keyboardDraft.value)
-  if (!dealPrice || dealPrice <= 0) {
-    uni.showToast({ title: '请输入有效单价', icon: 'none' })
+  const inputPrice = Number(keyboardDraft.value)
+  if (!inputPrice || inputPrice <= 0) {
+    uni.showToast({ title: keyboardMode.value === 'cost' ? '请输入有效成本价' : '请输入有效单价', icon: 'none' })
     return
+  }
+
+  if (activeLine.value.customItem && keyboardMode.value === 'cost') {
+    costPriceMap[activeLine.value.itemId] = keyboardDraft.value
+    closeKeypad()
+    return
+  }
+
+  const dealPrice = keyboardMode.value === 'cost'
+    ? Number(priceMap[activeLine.value.itemId])
+    : inputPrice
+  if (activeLine.value.customItem) {
+    const costPrice = keyboardMode.value === 'deal'
+      ? Number(costPriceMap[activeLine.value.itemId])
+      : inputPrice
+    if (!costPrice || costPrice <= 0) {
+      uni.showToast({ title: '请先填写成本价', icon: 'none' })
+      return
+    }
   }
 
   const currentLine = activeLine.value
@@ -466,11 +584,14 @@ async function confirmKeypad() {
     if (!fresh.lines.some((line) => line.itemId === currentLine.itemId)) {
       throw new Error('该明细已变化，请刷新后重试')
     }
-    detail.value = await submitProductPricing(
-      productId,
-      [{ itemId: currentLine.itemId, dealPrice }],
-      queryOptions.value,
-    )
+    const payload: PricingSubmitItem = {
+      itemId: currentLine.itemId,
+      dealPrice: keyboardMode.value === 'deal' ? inputPrice : Number(priceMap[currentLine.itemId]),
+    }
+    if (currentLine.customItem) {
+      payload.costPrice = Number(costPriceMap[currentLine.itemId])
+    }
+    detail.value = await submitProductPricing(productId, [payload], detailQuery.value)
     syncPriceMap(detail.value.lines)
     submitStatus.value = 'success'
     await refreshSidebar()
@@ -479,7 +600,10 @@ async function confirmKeypad() {
     }
     setTimeout(() => {
       submitStatus.value = 'idle'
-      if (detail.value?.lines.length) {
+      if (isEditingPriced.value) {
+        closeKeypad()
+        uni.showToast({ title: '已保存', icon: 'success' })
+      } else if (detail.value?.lines.length) {
         moveToNextLine(currentLine.itemId)
       }
     }, 900)
@@ -507,7 +631,7 @@ async function handleFetchPrices() {
   if (!productId) return
   detailLoading.value = true
   try {
-    detail.value = await fetchProductReferencePrices(productId, queryOptions.value)
+    detail.value = await fetchProductReferencePrices(productId, detailQuery.value)
     selectedProductId.value = detail.value.productId
     syncPriceMap(detail.value.lines)
     uni.showToast({ title: '已填入参考价', icon: 'success' })
@@ -529,6 +653,14 @@ async function handleSubmit() {
     return
   }
 
+  if (items.some((item) => {
+    const line = detail.value!.lines.find((l) => l.itemId === item.itemId)
+    return line?.customItem && (!item.costPrice || item.costPrice <= 0)
+  })) {
+    uni.showToast({ title: '代采商品请填写成本价', icon: 'none' })
+    return
+  }
+
   submitting.value = true
   submitStatus.value = 'submitting'
   try {
@@ -538,7 +670,7 @@ async function handleSubmit() {
     if (payload.length === 0) {
       throw new Error('待录价明细已变化，请刷新后重试')
     }
-    detail.value = await submitProductPricing(productId, payload, queryOptions.value)
+    detail.value = await submitProductPricing(productId, payload, detailQuery.value)
     syncPriceMap(detail.value.lines)
     submitStatus.value = 'success'
     if (!detail.value.lines.length) {
@@ -738,6 +870,40 @@ function getWeekRange(base: Date) {
 .product-item.active .product-name {
   color: #22c55e;
   font-weight: 600;
+}
+
+.custom-badge,
+.custom-line-tag,
+.custom-head-tag {
+  display: inline-block;
+  margin-left: 8rpx;
+  padding: 2rpx 10rpx;
+  font-size: 20rpx;
+  color: #e67e22;
+  background: #fff7e6;
+  border-radius: 999rpx;
+}
+
+.custom-tip {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #996633;
+}
+
+.dual-price {
+  display: flex;
+  gap: 12rpx;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.mini-label {
+  font-size: 20rpx;
+  color: #999;
+}
+
+.price-input.cost {
+  min-width: 120rpx;
 }
 
 .badge {

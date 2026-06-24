@@ -44,8 +44,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { fetchProcurementTasks, type ProcurementTaskItem } from '../../../api/procurement'
-import { useUserStore } from '../../../stores/user'
+import { fetchProcurementTasks, type ProcurementTaskItem } from '@common/api/procurement'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -78,7 +78,7 @@ onLoad((options) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (!receiveDate.value) {

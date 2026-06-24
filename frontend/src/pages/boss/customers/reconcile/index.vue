@@ -35,18 +35,18 @@
           </view>
           <view class="card-body">
             <view class="card-head">
-              <text class="delivery-text">配送: {{ formatDelivery(item.deliveryDate) }}</text>
-              <text class="pay-status">{{ item.paymentStatusLabel || '待收款' }}</text>
+              <text class="delivery-text">配送: {{ formatDeliveryDate(item.deliveryDate) }}</text>
+              <text class="pay-status">{{ orderSettlementLabel(item) }}</text>
             </view>
             <text class="order-no">订单编号 {{ item.orderNo }}</text>
             <view class="amount-row">
-              <text>销售金额 {{ formatMoney(item.amount) }}元</text>
+              <text>销售金额 {{ formatOrderMoney(getOrderReceivable(item)) }}元</text>
               <text v-if="item.priceIncomplete" class="muted">(未录完)</text>
               <text v-else class="muted">(已录完)</text>
             </view>
-            <view v-if="getOutstanding(item) > 0" class="debt-row">
+            <view v-if="getOrderOutstanding(item) > 0" class="debt-row">
               <text>欠款金额</text>
-              <text class="debt-value">{{ formatMoney(getOutstanding(item)) }}元</text>
+              <text class="debt-value">{{ formatOrderMoney(getOrderOutstanding(item)) }}元</text>
             </view>
           </view>
         </view>
@@ -97,15 +97,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { fetchBossOrders, type OrderInfo } from '../../../../api/order'
-import AppIcon from '../../../../components/AppIcon.vue'
+import { fetchBossOrders, type OrderInfo } from '@common/api/order'
+import { fetchBossCustomerDetail } from '@common/api/customer'
+import AppIcon from '@/components/AppIcon.vue'
 import {
   formatShortDate,
   getLastMonthsRange,
   getThisMonthRange,
   isThisMonthRange,
-} from '../../../../utils/date-range'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/utils/date-range'
+import {
+  formatDeliveryDate,
+  formatOrderMoney,
+  getOrderOutstanding,
+  getOrderReceivable,
+  orderSettlementLabel,
+} from '@common/utils/order-settlement'
+import { useUserStore } from '@common/stores/user'
 
 type PaymentTab = 'ALL' | 'UNPAID' | 'PAID'
 
@@ -127,7 +135,7 @@ const draftTo = ref(defaultRange.to)
 const tabs = [
   { label: '全部订单', value: 'ALL' as const },
   { label: '未付清', value: 'UNPAID' as const },
-  { label: '已付清', value: 'PAID' as const },
+  { label: '已结清', value: 'PAID' as const },
 ]
 
 const rangeLabel = computed(() => {
@@ -140,7 +148,7 @@ const rangeLabel = computed(() => {
 const isThisMonth = computed(() => isThisMonthRange(dateFrom.value, dateTo.value))
 
 const selectableOrders = computed(() =>
-  orders.value.filter((item) => getOutstanding(item) > 0),
+  orders.value.filter((item) => getOrderOutstanding(item) > 0),
 )
 
 const allSelected = computed(() =>
@@ -157,11 +165,25 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
+  await syncCustomerName()
   await loadOrders()
 })
+
+async function syncCustomerName() {
+  if (!customerId.value) return
+  try {
+    const detail = await fetchBossCustomerDetail(customerId.value)
+    customerName.value = detail.name
+    uni.setNavigationBarTitle({ title: `${detail.name} · 对账` })
+  } catch {
+    if (customerName.value) {
+      uni.setNavigationBarTitle({ title: `${customerName.value} · 对账` })
+    }
+  }
+}
 
 async function loadOrders() {
   if (!customerId.value) return
@@ -216,27 +238,9 @@ function applyDateRange() {
   loadOrders()
 }
 
-function getOutstanding(item: OrderInfo) {
-  if (item.outstandingAmount != null) return Number(item.outstandingAmount)
-  const receivable = Number(item.receivableAmount ?? item.amount ?? 0)
-  const paid = Number(item.paidAmount ?? 0)
-  return Math.max(receivable - paid, 0)
-}
-
-function formatMoney(value?: number) {
-  return Number(value || 0).toFixed(0)
-}
-
-function formatDelivery(value?: string) {
-  if (!value) return '-'
-  const parts = value.split('-')
-  if (parts.length < 3) return value
-  return `${parts[1]}-${parts[2]} 20:30`
-}
-
 function toggleSelect(id: number) {
   const item = orders.value.find((o) => o.id === id)
-  if (!item || getOutstanding(item) <= 0) return
+  if (!item || getOrderOutstanding(item) <= 0) return
   const idx = selectedIds.value.indexOf(id)
   if (idx >= 0) {
     selectedIds.value.splice(idx, 1)
@@ -259,7 +263,7 @@ function mergeSettle() {
     uni.showToast({ title: '请选择待结清订单', icon: 'none' })
     return
   }
-  const total = selected.reduce((sum, item) => sum + getOutstanding(item), 0)
+  const total = selected.reduce((sum, item) => sum + getOrderOutstanding(item), 0)
   if (total <= 0) {
     uni.showToast({ title: '所选订单无需结清', icon: 'none' })
     return
@@ -273,16 +277,16 @@ function mergeSettle() {
 function shareSummary() {
   const selected = selectedIds.value.length
     ? orders.value.filter((item) => selectedIds.value.includes(item.id))
-    : orders.value.filter((item) => getOutstanding(item) > 0)
+    : orders.value.filter((item) => getOrderOutstanding(item) > 0)
   if (selected.length === 0) {
     uni.showToast({ title: '暂无待分享内容', icon: 'none' })
     return
   }
-  const total = selected.reduce((sum, item) => sum + getOutstanding(item), 0)
+  const total = selected.reduce((sum, item) => sum + getOrderOutstanding(item), 0)
   const lines = selected.map((item) =>
-    `${item.orderNo} 欠款${formatMoney(getOutstanding(item))}元`,
+    `${item.orderNo} 欠款${formatOrderMoney(getOrderOutstanding(item))}元`,
   )
-  const text = `${customerName.value || '客户'}对账\n${lines.join('\n')}\n合计欠款：${formatMoney(total)}元`
+  const text = `${customerName.value || '客户'}对账\n${lines.join('\n')}\n合计欠款：${formatOrderMoney(total)}元`
   uni.setClipboardData({
     data: text,
     success: () => uni.showToast({ title: '对账摘要已复制', icon: 'success' }),

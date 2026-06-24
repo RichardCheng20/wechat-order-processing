@@ -28,6 +28,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductService {
 
+    public static final String CUSTOM_ORDER_PRODUCT_NAME = "【系统】自定义商品";
+
+    public static boolean isCustomOrderProduct(Product product) {
+        return product != null && CUSTOM_ORDER_PRODUCT_NAME.equals(product.getName());
+    }
+
     private final ProductMapper productMapper;
     private final ProductCategoryService categoryService;
     private final ProductPriceService productPriceService;
@@ -51,7 +57,28 @@ public class ProductService {
     }
 
     public List<ProductVO> listForCustomer(Long categoryId, String keyword, Long customerId) {
-        return toVOList(queryProducts(categoryId, keyword, "ON"), customerId, false);
+        return toVOList(queryCustomerProducts(categoryId, keyword), customerId, false);
+    }
+
+    @Transactional
+    public Product getOrCreateCustomOrderProduct() {
+        Long merchantId = merchantContext.currentMerchantId();
+        Product existing = productMapper.selectOne(new LambdaQueryWrapper<Product>()
+                .eq(Product::getMerchantId, merchantId)
+                .eq(Product::getName, CUSTOM_ORDER_PRODUCT_NAME)
+                .last("LIMIT 1"));
+        if (existing != null) {
+            return existing;
+        }
+        Product product = new Product();
+        product.setMerchantId(merchantId);
+        product.setName(CUSTOM_ORDER_PRODUCT_NAME);
+        product.setUnit("斤");
+        product.setSaleUnits("斤,箱,袋,个,扎,包,把,份");
+        product.setSaleStatus("OFF");
+        product.setStockQty(BigDecimal.ZERO);
+        productMapper.insert(product);
+        return product;
     }
 
     @Transactional
@@ -199,6 +226,24 @@ public class ProductService {
         if (!categoryService.isLeafCategory(categoryId)) {
             throw BusinessException.of(400, "请选择二级分类");
         }
+    }
+
+    private List<Product> queryCustomerProducts(Long categoryId, String keyword) {
+        Long merchantId = merchantContext.currentMerchantId();
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<Product>()
+                .eq(Product::getMerchantId, merchantId)
+                .eq(Product::getSaleStatus, "ON")
+                .ne(Product::getName, CUSTOM_ORDER_PRODUCT_NAME)
+                .orderByDesc(Product::getId);
+
+        if (categoryId != null) {
+            List<Long> categoryIds = categoryService.resolveFilterCategoryIds(categoryId);
+            wrapper.in(Product::getCategoryId, categoryIds);
+        }
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(w -> w.like(Product::getName, keyword).or().like(Product::getAliases, keyword));
+        }
+        return productMapper.selectList(wrapper);
     }
 
     private List<Product> queryProducts(Long categoryId, String keyword, String saleStatus) {

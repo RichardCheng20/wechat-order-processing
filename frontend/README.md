@@ -10,7 +10,20 @@ npm install --legacy-peer-deps
 npm run dev:mp-weixin
 ```
 
-编译产物在 `frontend/dist/dev/mp-weixin`，用**微信开发者工具**打开该目录。
+编译产物在 `frontend/dist/dev/mp-weixin`，用**微信开发者工具**打开该目录（日常开发调试）。
+
+## 上传发布
+
+**务必使用生产构建**，不要用 `dist/dev`：
+
+```bash
+cd frontend
+npm run build:mp-weixin
+```
+
+用微信开发者工具打开 **`frontend/dist/build/mp-weixin`**，再点「上传」。
+
+生产包已配置：JS 压缩、组件按需注入、分包（主包仅启动页 + vendor，公共模块在独立分包 `packages/common`）。
 
 ## 配置
 

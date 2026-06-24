@@ -11,6 +11,7 @@ import com.vwholesale.order.entity.Order;
 import com.vwholesale.order.entity.OrderItem;
 import com.vwholesale.order.mapper.OrderItemMapper;
 import com.vwholesale.order.mapper.OrderMapper;
+import com.vwholesale.order.support.OrderItemDisplay;
 import com.vwholesale.procurement.dto.ProcurementCustomerLineVO;
 import com.vwholesale.procurement.dto.ProcurementProductDetailVO;
 import com.vwholesale.procurement.dto.ProcurementPurchasePriceSubmitRequest;
@@ -23,6 +24,7 @@ import com.vwholesale.product.entity.ProductPurchasePriceRecord;
 import com.vwholesale.product.mapper.ProductCategoryMapper;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.product.service.ProductPurchasePriceService;
+import com.vwholesale.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,11 +61,18 @@ public class ProcurementTaskService {
         ProcurementWorkspace workspace = loadWorkspace(date);
         Map<Long, ProductCategory> categoryMap = workspace.categoryMap();
 
-        Map<Long, List<OrderItem>> grouped = workspace.items().stream()
+        List<OrderItem> catalogItems = workspace.items().stream()
+                .filter(item -> !OrderItemDisplay.isCustomItem(item))
+                .toList();
+        List<OrderItem> customItems = workspace.items().stream()
+                .filter(OrderItemDisplay::isCustomItem)
+                .toList();
+
+        Map<Long, List<OrderItem>> catalogGrouped = catalogItems.stream()
                 .collect(Collectors.groupingBy(OrderItem::getProductId));
 
         Map<Long, Product> productsToShow = loadCatalogProducts(keyword, categoryId, categoryMap);
-        for (Map.Entry<Long, List<OrderItem>> entry : grouped.entrySet()) {
+        for (Map.Entry<Long, List<OrderItem>> entry : catalogGrouped.entrySet()) {
             if (productsToShow.containsKey(entry.getKey())) {
                 continue;
             }
@@ -71,66 +80,52 @@ public class ProcurementTaskService {
             if (product == null) {
                 product = productMapper.selectById(entry.getKey());
             }
-            if (product == null || !matchesProductFilter(product, keyword, categoryId, categoryMap)) {
+            if (product == null || ProductService.isCustomOrderProduct(product)
+                    || !matchesProductFilter(product, keyword, categoryId, categoryMap)) {
                 continue;
             }
             productsToShow.put(product.getId(), product);
         }
 
-        if (productsToShow.isEmpty()) {
-            return emptyTask(date);
-        }
-
-        List<Long> productIds = new ArrayList<>(productsToShow.keySet());
-        Map<Long, BigDecimal> defaultPrices = productsToShow.values().stream()
-                .collect(Collectors.toMap(Product::getId,
-                        p -> p.getDefaultPurchasePrice() != null ? p.getDefaultPurchasePrice() : BigDecimal.ZERO));
-        Map<Long, BigDecimal> purchasePrices = productPurchasePriceService.batchResolvePurchasePrices(
-                productIds, date, defaultPrices);
-
         List<ProcurementTaskItemVO> taskItems = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal totalNeedQty = BigDecimal.ZERO;
 
-        for (Product product : productsToShow.values()) {
-            List<OrderItem> productItems = grouped.getOrDefault(product.getId(), List.of());
-            BigDecimal demandQty = productItems.stream()
-                    .map(this::itemQuantity)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (!productsToShow.isEmpty()) {
+            List<Long> productIds = new ArrayList<>(productsToShow.keySet());
+            Map<Long, BigDecimal> defaultPrices = productsToShow.values().stream()
+                    .collect(Collectors.toMap(Product::getId,
+                            p -> p.getDefaultPurchasePrice() != null ? p.getDefaultPurchasePrice() : BigDecimal.ZERO));
+            Map<Long, BigDecimal> purchasePrices = productPurchasePriceService.batchResolvePurchasePrices(
+                    productIds, date, defaultPrices);
 
-            BigDecimal stockQty = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
-            BigDecimal needQty = demandQty.subtract(stockQty).max(BigDecimal.ZERO);
-            BigDecimal purchasePrice = purchasePrices.get(product.getId());
-            boolean priced = purchasePrice != null && purchasePrice.compareTo(BigDecimal.ZERO) > 0;
-            BigDecimal priceForAmount = purchasePrice != null ? purchasePrice : BigDecimal.ZERO;
-            BigDecimal lineAmount = priceForAmount.multiply(needQty).setScale(2, RoundingMode.HALF_UP);
-            totalAmount = totalAmount.add(lineAmount);
-            totalNeedQty = totalNeedQty.add(needQty);
-
-            Set<Long> relatedOrderIds = new HashSet<>();
-            Set<Long> relatedCustomerIds = new HashSet<>();
-            for (OrderItem item : productItems) {
-                relatedOrderIds.add(item.getOrderId());
-                Order order = workspace.orderMap().get(item.getOrderId());
-                if (order != null && order.getCustomerId() != null) {
-                    relatedCustomerIds.add(order.getCustomerId());
-                }
+            for (Product product : productsToShow.values()) {
+                List<OrderItem> productItems = catalogGrouped.getOrDefault(product.getId(), List.of());
+                ProcurementTaskItemVO taskItem = buildCatalogTaskItem(product, productItems, workspace,
+                        purchasePrices.get(product.getId()), date);
+                taskItems.add(taskItem);
+                totalAmount = totalAmount.add(taskItem.getTotalAmount() != null ? taskItem.getTotalAmount() : BigDecimal.ZERO);
+                totalNeedQty = totalNeedQty.add(taskItem.getNeedQty());
             }
+        }
 
-            taskItems.add(ProcurementTaskItemVO.builder()
-                    .productId(product.getId())
-                    .productName(product.getName())
-                    .categoryId(product.getCategoryId())
-                    .unit(resolveUnit(productItems, product))
-                    .demandQty(demandQty)
-                    .stockQty(stockQty)
-                    .needQty(needQty)
-                    .purchasePrice(priced ? purchasePrice : null)
-                    .totalAmount(lineAmount)
-                    .orderCount(relatedOrderIds.size())
-                    .customerCount(relatedCustomerIds.size())
-                    .priced(priced)
-                    .build());
+        if (categoryId == null && !customItems.isEmpty()) {
+            Map<String, List<OrderItem>> customGrouped = customItems.stream()
+                    .collect(Collectors.groupingBy(item -> item.getOriginalText().trim()));
+            for (Map.Entry<String, List<OrderItem>> entry : customGrouped.entrySet()) {
+                String customName = entry.getKey();
+                if (StringUtils.hasText(keyword) && !customName.contains(keyword.trim())) {
+                    continue;
+                }
+                ProcurementTaskItemVO taskItem = buildCustomTaskItem(customName, entry.getValue(), workspace);
+                taskItems.add(taskItem);
+                totalAmount = totalAmount.add(taskItem.getTotalAmount() != null ? taskItem.getTotalAmount() : BigDecimal.ZERO);
+                totalNeedQty = totalNeedQty.add(taskItem.getNeedQty());
+            }
+        }
+
+        if (taskItems.isEmpty()) {
+            return emptyTask(date);
         }
 
         taskItems.sort(Comparator
@@ -147,14 +142,146 @@ public class ProcurementTaskService {
                 .build();
     }
 
+    private ProcurementTaskItemVO buildCatalogTaskItem(Product product, List<OrderItem> productItems,
+                                                         ProcurementWorkspace workspace, BigDecimal purchasePrice,
+                                                         LocalDate date) {
+        BigDecimal demandQty = productItems.stream()
+                .map(this::itemQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal stockQty = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
+        BigDecimal needQty = demandQty.subtract(stockQty).max(BigDecimal.ZERO);
+        boolean priced = purchasePrice != null && purchasePrice.compareTo(BigDecimal.ZERO) > 0;
+        BigDecimal priceForAmount = purchasePrice != null ? purchasePrice : BigDecimal.ZERO;
+        BigDecimal lineAmount = priceForAmount.multiply(needQty).setScale(2, RoundingMode.HALF_UP);
+
+        Set<Long> relatedOrderIds = new HashSet<>();
+        Set<Long> relatedCustomerIds = new HashSet<>();
+        for (OrderItem item : productItems) {
+            relatedOrderIds.add(item.getOrderId());
+            Order order = workspace.orderMap().get(item.getOrderId());
+            if (order != null && order.getCustomerId() != null) {
+                relatedCustomerIds.add(order.getCustomerId());
+            }
+        }
+
+        return ProcurementTaskItemVO.builder()
+                .productId(product.getId())
+                .customItem(false)
+                .productName(product.getName())
+                .categoryId(product.getCategoryId())
+                .unit(resolveUnit(productItems, product))
+                .demandQty(demandQty)
+                .stockQty(stockQty)
+                .needQty(needQty)
+                .purchasePrice(priced ? purchasePrice : null)
+                .totalAmount(lineAmount)
+                .orderCount(relatedOrderIds.size())
+                .customerCount(relatedCustomerIds.size())
+                .priced(priced)
+                .build();
+    }
+
+    private ProcurementTaskItemVO buildCustomTaskItem(String customName, List<OrderItem> productItems,
+                                                      ProcurementWorkspace workspace) {
+        BigDecimal demandQty = productItems.stream()
+                .map(this::itemQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal needQty = demandQty;
+        long pricedLines = productItems.stream().filter(item -> item.getCostPrice() != null).count();
+        boolean priced = pricedLines == productItems.size() && !productItems.isEmpty();
+        BigDecimal purchasePrice = productItems.stream()
+                .map(OrderItem::getCostPrice)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        BigDecimal priceForAmount = purchasePrice != null ? purchasePrice : BigDecimal.ZERO;
+        BigDecimal lineAmount = priceForAmount.multiply(needQty).setScale(2, RoundingMode.HALF_UP);
+
+        Set<Long> relatedOrderIds = new HashSet<>();
+        Set<Long> relatedCustomerIds = new HashSet<>();
+        for (OrderItem item : productItems) {
+            relatedOrderIds.add(item.getOrderId());
+            Order order = workspace.orderMap().get(item.getOrderId());
+            if (order != null && order.getCustomerId() != null) {
+                relatedCustomerIds.add(order.getCustomerId());
+            }
+        }
+
+        OrderItem first = productItems.get(0);
+        return ProcurementTaskItemVO.builder()
+                .productId(first.getProductId())
+                .customItem(true)
+                .customName(customName)
+                .productName(customName)
+                .categoryId(null)
+                .unit(resolveUnit(productItems, workspace.productMap().get(first.getProductId())))
+                .demandQty(demandQty)
+                .stockQty(BigDecimal.ZERO)
+                .needQty(needQty)
+                .purchasePrice(priced ? purchasePrice : null)
+                .totalAmount(lineAmount)
+                .orderCount(relatedOrderIds.size())
+                .customerCount(relatedCustomerIds.size())
+                .priced(priced)
+                .build();
+    }
+
+    public ProcurementProductDetailVO getCustomItemDetail(String customName, LocalDate receiveDate) {
+        RoleChecker.requireBoss();
+        if (!StringUtils.hasText(customName)) {
+            throw BusinessException.of(400, "请指定代采商品名称");
+        }
+        LocalDate date = receiveDate != null ? receiveDate : LocalDate.now();
+        ProcurementWorkspace workspace = loadWorkspace(date);
+        String name = customName.trim();
+        List<OrderItem> productItems = workspace.items().stream()
+                .filter(item -> OrderItemDisplay.isCustomItem(item) && name.equals(item.getOriginalText().trim()))
+                .toList();
+        if (productItems.isEmpty()) {
+            throw BusinessException.of(404, "该代采商品暂无采购记录");
+        }
+
+        BigDecimal demandQty = productItems.stream().map(this::itemQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+        long pricedLines = productItems.stream().filter(item -> item.getCostPrice() != null).count();
+        boolean priced = pricedLines == productItems.size();
+        BigDecimal purchasePrice = productItems.stream()
+                .map(OrderItem::getCostPrice)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        List<ProcurementCustomerLineVO> customerLines = buildCustomerLines(productItems, workspace);
+        OrderItem first = productItems.get(0);
+        Product placeholder = workspace.productMap().get(first.getProductId());
+
+        return ProcurementProductDetailVO.builder()
+                .productId(first.getProductId())
+                .customItem(true)
+                .customName(name)
+                .productName(name)
+                .unit(resolveUnit(productItems, placeholder))
+                .receiveDate(date)
+                .demandQty(demandQty)
+                .stockQty(BigDecimal.ZERO)
+                .needQty(demandQty)
+                .purchasePrice(priced ? purchasePrice : null)
+                .priced(priced)
+                .recordedAtPricing(true)
+                .customerLines(customerLines)
+                .build();
+    }
+
     public ProcurementProductDetailVO getProductDetail(Long productId, LocalDate receiveDate) {
         RoleChecker.requireBoss();
         LocalDate date = receiveDate != null ? receiveDate : LocalDate.now();
         Product product = getProductOrThrow(productId);
+        if (ProductService.isCustomOrderProduct(product)) {
+            throw BusinessException.of(400, "请从采购列表选择具体代采商品");
+        }
         ProcurementWorkspace workspace = loadWorkspace(date);
 
         List<OrderItem> productItems = workspace.items().stream()
-                .filter(item -> Objects.equals(item.getProductId(), productId))
+                .filter(item -> Objects.equals(item.getProductId(), productId)
+                        && !OrderItemDisplay.isCustomItem(item))
                 .toList();
 
         BigDecimal demandQty = productItems.stream()
@@ -350,6 +477,9 @@ public class ProcurementTaskService {
                 .orderByAsc(Product::getName));
         Map<Long, Product> result = new java.util.LinkedHashMap<>();
         for (Product product : products) {
+            if (ProductService.isCustomOrderProduct(product)) {
+                continue;
+            }
             if (!matchesProductFilter(product, keyword, categoryId, categoryMap)) {
                 continue;
             }
@@ -412,7 +542,10 @@ public class ProcurementTaskService {
         if (!productItems.isEmpty() && productItems.get(0).getUnit() != null) {
             return productItems.get(0).getUnit();
         }
-        return product.getUnit();
+        if (product != null && product.getUnit() != null) {
+            return product.getUnit();
+        }
+        return "斤";
     }
 
     private BigDecimal itemQuantity(OrderItem item) {

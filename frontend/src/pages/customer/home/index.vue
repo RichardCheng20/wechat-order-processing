@@ -34,7 +34,7 @@
             v-for="cat in categoryTabs"
             :key="cat.key"
             class="cat-item"
-            :class="{ active: activeCategoryKey === cat.key }"
+            :class="{ active: activeCategoryKey === cat.key, special: cat.key === 'custom' }"
             @tap="switchCategory(cat.key)"
           >
             {{ cat.label }}
@@ -42,9 +42,9 @@
         </scroll-view>
       </view>
 
-      <view class="product-panel" :class="{ 'has-sub-cats': subCategoryTabs.length > 0 }">
+      <view class="product-panel" :class="{ 'has-sub-cats': subCategoryTabs.length > 0 && activeCategoryKey !== 'custom' }">
         <scroll-view
-          v-if="subCategoryTabs.length > 0"
+          v-if="subCategoryTabs.length > 0 && activeCategoryKey !== 'custom'"
           scroll-x
           class="sub-cat-scroll"
           :show-scrollbar="false"
@@ -61,7 +61,59 @@
         </scroll-view>
 
         <scroll-view scroll-y class="product-scroll" :show-scrollbar="false">
-          <view v-if="loading" class="loading-wrap">
+          <view v-if="activeCategoryKey === 'custom'" class="custom-panel">
+            <text class="custom-title">其他自定义商品</text>
+            <text class="custom-hint">档口暂无的商品可在此填写，老板会帮您配货</text>
+
+            <view class="custom-field">
+              <text class="custom-label">商品名称</text>
+              <input
+                v-model="customName"
+                class="custom-input"
+                type="text"
+                placeholder="如：本地没有的进口香料"
+                maxlength="50"
+              />
+            </view>
+
+            <view class="custom-field">
+              <text class="custom-label">数量与单位</text>
+              <view class="custom-qty-row">
+                <input
+                  v-model="customQty"
+                  class="custom-input qty"
+                  type="digit"
+                  placeholder="数量"
+                />
+                <scroll-view scroll-x class="custom-unit-scroll" :show-scrollbar="false">
+                  <view class="custom-unit-row">
+                    <text
+                      v-for="unit in customUnitOptions"
+                      :key="unit"
+                      class="custom-unit-chip"
+                      :class="{ active: customUnit === unit }"
+                      @tap="customUnit = unit"
+                    >{{ unit }}</text>
+                  </view>
+                </scroll-view>
+              </view>
+            </view>
+
+            <view class="custom-field">
+              <text class="custom-label">备注（选填）</text>
+              <input
+                v-model="customRemark"
+                class="custom-input"
+                type="text"
+                placeholder="规格、品质要求等"
+                maxlength="100"
+              />
+            </view>
+
+            <button class="custom-add-btn" @tap="addCustomToCart">加入购物车</button>
+          </view>
+
+          <view v-else-if="loading" class="loading-wrap">
             <u-loading-icon text="加载中" />
           </view>
           <view v-else-if="loadError" class="empty-wrap">
@@ -284,24 +336,25 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
-import { parseOrderExcel } from '../../../api/orderImport'
-import { fetchBindStatus } from '../../../api/customer'
-import { fetchCustomerCategories, fetchCustomerProducts, type CategoryItem, type ProductItem } from '../../../api/product'
-import AppIcon from '../../../components/AppIcon.vue'
-import CustomerTabBar from '../../../components/CustomerTabBar.vue'
-import { parseSaleUnits } from '../../../constants/units'
-import { useCartStore } from '../../../stores/cart'
-import { useUserStore } from '../../../stores/user'
-import { buildPrimarySidebar, getParentCategory } from '../../../utils/category'
-import { customerTabBarHeightPx } from '../../../utils/customer-nav'
-import { chooseImportExcel, chooseImportImage, openPhotoImportMenu as showPhotoImportMenu } from '../../../utils/orderImport'
-import { resolveMediaUrl } from '../../../utils/media'
+import { parseOrderExcel } from '@common/api/orderImport'
+import { fetchBindStatus } from '@common/api/customer'
+import { fetchCustomerCategories, fetchCustomerProducts, type CategoryItem, type ProductItem } from '@common/api/product'
+import AppIcon from '@/components/AppIcon.vue'
+import CustomerTabBar from '@/components/CustomerTabBar.vue'
+import { COMMON_SALE_UNITS, parseSaleUnits } from '@common/constants/units'
+import { useCartStore } from '@common/stores/cart'
+import { useUserStore } from '@common/stores/user'
+import { buildPrimarySidebar, getParentCategory } from '@common/utils/category'
+import { customerTabBarHeightPx } from '@common/utils/customer-nav'
+import { chooseImportExcel, chooseImportImage, openPhotoImportMenu as showPhotoImportMenu } from '@common/utils/orderImport'
+import { resolveMediaUrl } from '@common/utils/media'
+import { applyEntryQuery } from '@common/utils/tenant'
 import {
   applyParsedLines,
   parseOrderText,
   previewParsedLines,
   type ParsedPreviewLine,
-} from '../../../utils/parseOrderText'
+} from '@common/utils/parseOrderText'
 
 const userStore = useUserStore()
 const cartStore = useCartStore()
@@ -332,12 +385,20 @@ const entryProduct = ref<ProductItem | null>(null)
 const entryUnit = ref('斤')
 const entryQty = ref('')
 const entryRemark = ref('')
+const customName = ref('')
+const customQty = ref('')
+const customUnit = ref('斤')
+const customRemark = ref('')
+const customUnitOptions = [...COMMON_SALE_UNITS]
 const mainHeight = ref(0)
 let fetching = false
 
 const mainStyle = computed(() => (mainHeight.value > 0 ? { height: `${mainHeight.value}px` } : {}))
 
-const categoryTabs = computed(() => buildPrimarySidebar(categories.value))
+const categoryTabs = computed(() => [
+  ...buildPrimarySidebar(categories.value),
+  { key: 'custom', label: '自定义', level: 0 as const },
+])
 
 const subCategoryTabs = computed(() => {
   const parent = getParentCategory(categories.value, activeCategoryKey.value)
@@ -374,9 +435,10 @@ const entryUnits = computed(() => {
   return parseSaleUnits(entryProduct.value.saleUnits, entryProduct.value.unit)
 })
 
-onLoad(async () => {
+onLoad(async (query) => {
+  applyEntryQuery(query as Record<string, string | undefined>)
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await syncCustomerProfile()
@@ -389,7 +451,7 @@ onReady(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   await nextTick()
@@ -463,7 +525,36 @@ async function ensureAllProducts() {
 function switchCategory(key: string) {
   activeCategoryKey.value = key
   subCategoryFilter.value = 'all'
+  if (key === 'custom') {
+    loading.value = false
+    loadError.value = ''
+    products.value = []
+    return
+  }
   loadProducts()
+}
+
+function addCustomToCart() {
+  const name = customName.value.trim()
+  const qty = Number(customQty.value)
+  if (!name) {
+    uni.showToast({ title: '请填写商品名称', icon: 'none' })
+    return
+  }
+  if (!qty || qty <= 0) {
+    uni.showToast({ title: '请填写有效数量', icon: 'none' })
+    return
+  }
+  cartStore.addCustomLine({
+    name,
+    unit: customUnit.value,
+    qty,
+    remark: customRemark.value.trim() || undefined,
+  })
+  customName.value = ''
+  customQty.value = ''
+  customRemark.value = ''
+  uni.showToast({ title: '已加入购物车', icon: 'success' })
 }
 
 function switchSubCategory(key: string) {
@@ -1512,6 +1603,106 @@ function updateMainHeight() {
   background: #07c160;
   color: #fff;
   font-weight: 600;
+}
+
+.cat-item.special {
+  color: #e67e22;
+}
+
+.cat-item.special.active {
+  color: #07c160;
+}
+
+.custom-panel {
+  padding: 28rpx 24rpx 40rpx;
+}
+
+.custom-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #17211b;
+}
+
+.custom-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #66736b;
+}
+
+.custom-field {
+  margin-top: 28rpx;
+}
+
+.custom-label {
+  display: block;
+  margin-bottom: 12rpx;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.custom-input {
+  width: 100%;
+  height: 80rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  background: #f7f8fa;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+}
+
+.custom-qty-row {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.custom-input.qty {
+  width: 100%;
+}
+
+.custom-unit-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.custom-unit-row {
+  display: inline-flex;
+  gap: 12rpx;
+  padding-bottom: 4rpx;
+}
+
+.custom-unit-chip {
+  padding: 10rpx 22rpx;
+  font-size: 24rpx;
+  color: #66736b;
+  background: #f7f8fa;
+  border-radius: 999rpx;
+  flex-shrink: 0;
+}
+
+.custom-unit-chip.active {
+  color: #07c160;
+  background: #e8f8ef;
+  font-weight: 600;
+}
+
+.custom-add-btn {
+  margin-top: 36rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: #07c160;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 12rpx;
+  border: none;
+}
+
+.custom-add-btn::after {
+  border: none;
 }
 
 .confirm-secondary-btn::after,

@@ -207,12 +207,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { filterUnits, parseSaleUnits } from '../../../constants/units'
-import { fetchBossCategories, fetchBossProducts, type CategoryItem, type ProductItem } from '../../../api/product'
-import { buildPrimarySidebar, getParentCategory } from '../../../utils/category'
-import { resolveMediaUrl } from '../../../utils/media'
-import { useSalesOrderStore } from '../../../stores/salesOrder'
-import { useUserStore } from '../../../stores/user'
+import { filterUnits, parseSaleUnits } from '@common/constants/units'
+import { fetchBossCategories, fetchBossProducts, type CategoryItem, type ProductItem } from '@common/api/product'
+import { buildPrimarySidebar, getParentCategory } from '@common/utils/category'
+import { resolveMediaUrl } from '@common/utils/media'
+import { useSalesOrderStore } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
 
 type EntryField = 'qty' | 'price'
 
@@ -276,7 +276,7 @@ const entryTotal = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   categories.value = await fetchBossCategories()
@@ -296,13 +296,15 @@ async function loadProducts() {
   loading.value = true
   try {
     if (activeCategoryKey.value === 'uncategorized') {
-      products.value = (await fetchBossProducts({ keyword: keyword.value || undefined }))
+      products.value = (await fetchBossProducts({ keyword: keyword.value || undefined }) || [])
         .filter((item) => !item.categoryId && item.saleStatus === 'ON')
       return
     }
     const categoryId = resolveCategoryId()
-    const all = await fetchBossProducts({ categoryId, keyword: keyword.value || undefined })
+    const all = await fetchBossProducts({ categoryId, keyword: keyword.value || undefined }) || []
     products.value = all.filter((item) => item.saleStatus === 'ON')
+  } catch {
+    products.value = []
   } finally {
     loading.value = false
   }

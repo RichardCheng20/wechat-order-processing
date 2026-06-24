@@ -55,6 +55,10 @@
               <text class="info-label">订单状态</text>
               <text class="info-value status-text">{{ order.statusLabel }}</text>
             </view>
+            <view v-if="order.pickedByWorkerCode" class="info-row">
+              <text class="info-label">拣单配送员</text>
+              <text class="info-value">{{ order.pickedByWorkerCode }}</text>
+            </view>
             <view class="info-row">
               <text class="info-label">下单金额</text>
               <text class="info-value">{{ formatMoney(order.amount) }}</text>
@@ -106,7 +110,8 @@
           <view class="table-head">
             <text class="col-name">商品名</text>
             <text class="col-qty">下单数</text>
-            <text class="col-out">出库数</text>
+            <text class="col-stock">库存</text>
+            <text class="col-out">拣单数</text>
             <text class="col-price">单价</text>
             <text class="col-sub">小计</text>
           </view>
@@ -121,6 +126,7 @@
               <text v-if="line.pickRemark" class="line-remark">备注：{{ line.pickRemark }}</text>
             </view>
             <text class="col-qty">{{ line.orderQty }}{{ line.unit }}</text>
+            <text class="col-stock" :class="{ warn: isStockInsufficient(line) }">{{ stockText(line) }}</text>
             <text class="col-out" :class="{ done: line.actualQty != null }">{{ outboundQty(line) }}</text>
             <text class="col-price">{{ line.dealPrice != null ? line.dealPrice : '—' }}</text>
             <text class="col-sub">{{ lineSubtotal(line) }}</text>
@@ -131,46 +137,49 @@
       </scroll-view>
 
       <view class="boss-bottom-bar detail-bar">
-        <view class="bar-tool" @tap="showMoreActions = true">
-          <AppIcon name="batch" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
-          <text>更多</text>
+        <view class="bar-tools">
+          <view class="bar-tool" @tap="showMoreActions = true">
+            <AppIcon name="batch" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
+            <text>更多</text>
+          </view>
+          <view v-if="canEditOrder" class="bar-tool" @tap="goEdit">
+            <AppIcon name="pricing" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
+            <text>改单</text>
+          </view>
         </view>
-        <view v-if="canEditOrder" class="bar-tool" @tap="goEdit">
-          <AppIcon name="pricing" tone="gray" :size="18" :tile-size="44" :radius="12" :tile="true" />
-          <text>改单</text>
+        <view class="bar-actions">
+          <view
+            class="bar-print-btn"
+            :class="{ primary: canSendStatement }"
+            @tap="goPrint"
+          >
+            {{ printActionLabel }}
+          </view>
+          <button
+            v-if="showPickAction"
+            class="bar-primary"
+            :class="{ picked: isFullyPicked && pickButtonDisabled }"
+            :disabled="pickButtonDisabled"
+            @tap="goPick"
+          >
+            {{ pickButtonLabel }}
+          </button>
+          <button
+            v-else-if="showPriceButton"
+            class="bar-primary"
+            @tap="goPricing"
+          >
+            {{ priceButtonLabel }}
+          </button>
+          <button
+            v-else-if="showPaymentAction"
+            class="bar-pay"
+            :class="{ paid: isOrderPaid }"
+            @tap="handlePaymentTap"
+          >
+            {{ paymentActionLabel }}
+          </button>
         </view>
-        <view class="bar-outline" @tap="goPrint">发送对账单</view>
-        <button
-          v-if="showPickAction"
-          class="bar-primary"
-          :class="{ picked: isFullyPicked && pickButtonDisabled }"
-          :disabled="pickButtonDisabled"
-          @tap="goPick"
-        >
-          {{ pickButtonLabel }}
-        </button>
-        <button
-          v-else-if="order.status === 'PENDING_CONFIRM'"
-          class="bar-primary"
-          @tap="handleConfirm"
-        >
-          确认交货
-        </button>
-        <button
-          v-else-if="showPriceButton"
-          class="bar-primary"
-          @tap="goPricing"
-        >
-          去录价
-        </button>
-        <button
-          v-else-if="showPaymentAction"
-          class="bar-pay"
-          :class="{ paid: isOrderPaid }"
-          @tap="handlePaymentTap"
-        >
-          {{ paymentActionLabel }}
-        </button>
       </view>
 
       <canvas
@@ -292,19 +301,20 @@ import {
   updateBossOrderStatus,
   type OrderInfo,
   type OrderLineItem,
-} from '../../../../api/order'
-import { completeBossPick, fetchBossPickPrices } from '../../../../api/pick'
-import { uploadPaymentVoucher } from '../../../../api/payment'
-import { syncQuoteFromOrder } from '../../../../api/quote'
-import AppIcon from '../../../../components/AppIcon.vue'
-import { deliveryDateString, useSalesOrderStore } from '../../../../stores/salesOrder'
-import { useUserStore } from '../../../../stores/user'
+} from '@common/api/order'
+import { completeBossPick, fetchBossPickPrices } from '@common/api/pick'
+import { uploadPaymentVoucher } from '@common/api/payment'
+import { syncQuoteFromOrder } from '@common/api/quote'
+import AppIcon from '@/components/AppIcon.vue'
+import { deliveryDateString, useSalesOrderStore } from '@common/stores/salesOrder'
+import { useUserStore } from '@common/stores/user'
 import {
   buildDeliveryNote,
   DELIVERY_NOTE_CANVAS,
   exportDeliveryNoteImage,
-} from '../../../../utils/delivery-note'
-import { isPaid } from '../../../../utils/order-flow'
+} from '@common/utils/delivery-note'
+import { isPaid, isPickDone } from '@common/utils/order-flow'
+import { refreshBossOrderAlert } from '@common/utils/boss-order-alert'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -352,29 +362,45 @@ function countPickedFromItems() {
 }
 
 const pickButtonLabel = computed(() => {
-  if (isFullyPicked.value) return '已拣单'
   const o = order.value
-  return `分拣(${o?.pickedItemCount || 0}/${o?.itemCount || itemKinds.value})`
+  if (!o) return '确认'
+  if (o.status === 'PICKED' || (pickButtonDisabled.value && isFullyPicked.value)) {
+    return '已拣单'
+  }
+  if (o.status === 'PENDING_CONFIRM') {
+    return '确认'
+  }
+  return '拣单'
 })
 
 const pickButtonDisabled = computed(() => {
   const o = order.value
   if (!o) return true
-  if (['PRICED', 'COMPLETED', 'CANCELLED'].includes(o.status)) return true
+  if (['PRICED', 'COMPLETED', 'CANCELLED', 'PICKED'].includes(o.status)) return true
   if (o.status === 'PENDING_PRICE' && o.amount != null) return true
   return false
 })
 
-const showPickAction = computed(() => {
-  if (!order.value) return false
-  if (['CANCELLED', 'COMPLETED', 'PRICED'].includes(order.value.status)) return false
-  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE'].includes(order.value.status)
-    && !(order.value.status === 'PENDING_PRICE' && order.value.amount != null)
+const showPriceButton = computed(() => {
+  const o = order.value
+  if (!o) return false
+  if (['CANCELLED', 'COMPLETED', 'PRICED'].includes(o.status)) return false
+  if (!isPickDone(o)) return false
+  if (o.status === 'PICKED') return true
+  if (o.status === 'PENDING_PRICE' && (o.amount == null || o.priceIncomplete)) return true
+  return false
 })
 
-const itemKinds = computed(() =>
-  order.value?.items?.length || order.value?.itemCount || 0,
-)
+const priceButtonLabel = computed(() => {
+  if (order.value?.priceIncomplete) return '继续录价'
+  return '去录价'
+})
+
+const showPickAction = computed(() => {
+  if (!order.value || showPriceButton.value) return false
+  if (['CANCELLED', 'COMPLETED', 'PRICED'].includes(order.value.status)) return false
+  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING'].includes(order.value.status)
+})
 
 const deliveryTimeText = computed(() => {
   if (!order.value?.deliveryDate) return '—'
@@ -393,11 +419,17 @@ const canEditOrder = computed(() => {
   return !['CANCELLED', 'COMPLETED'].includes(order.value.status)
 })
 
-const showPriceButton = computed(() => {
-  if (!order.value) return false
-  return ['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PICKED', 'PENDING_PRICE'].includes(order.value.status)
-    && order.value.amount == null
+const itemKinds = computed(() =>
+  order.value?.items?.length || order.value?.itemCount || 0,
+)
+
+const canSendStatement = computed(() => {
+  const o = order.value
+  if (!o || o.status === 'CANCELLED') return false
+  return o.amount != null && !o.priceIncomplete
 })
+
+const printActionLabel = computed(() => (canSendStatement.value ? '发送对账单' : '订单详情打印'))
 
 const isOrderPaid = computed(() => (order.value ? isPaid(order.value) : false))
 
@@ -414,6 +446,7 @@ const showPaymentAction = computed(() => {
   if (!o || o.status === 'CANCELLED' || o.amount == null) return false
   if (showPickAction.value || showPriceButton.value) return false
   if (o.status === 'PENDING_CONFIRM') return false
+  if (!o.printed) return false
   return true
 })
 
@@ -426,18 +459,12 @@ const statementCanvasHeight = computed(() => {
 
 const isTemporaryOrder = computed(() => !order.value?.customerId)
 
-const moreMenuItems = computed<MoreMenuItem[]>(() => {
-  const items: MoreMenuItem[] = [
-    { key: 'copy', label: '复制订单', icon: 'salesOrder', tone: 'gray' },
-    { key: 'share', label: '分享', icon: 'invite', tone: 'gray' },
-    { key: 'syncPrice', label: '同步价格', icon: 'quote', tone: 'orange' },
-    { key: 'voucher', label: '添加凭证', icon: 'camera', tone: 'gray' },
-    { key: 'outbound', label: '出库', icon: 'inventory', tone: 'gray' },
-    { key: 'delete', label: '删单', icon: 'delete', tone: 'red' },
-    { key: 'remark', label: '备注', icon: 'pricing', tone: 'gray' },
-  ]
-  return items
-})
+const moreMenuItems = computed<MoreMenuItem[]>(() => [
+  { key: 'copy', label: '复制订单', icon: 'salesOrder', tone: 'gray' },
+  { key: 'share', label: '分享', icon: 'invite', tone: 'gray' },
+  { key: 'delete', label: '删单', icon: 'delete', tone: 'red' },
+  { key: 'remark', label: '备注', icon: 'pricing', tone: 'gray' },
+])
 
 const payMethodLabel = computed(() => {
   const label = PAY_METHOD_LABELS[payMethod.value] || '微信'
@@ -453,7 +480,7 @@ const payReceivableText = computed(() => {
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   orderId.value = Number(query?.id || 0)
@@ -484,15 +511,6 @@ function handleMoreMenu(key: string) {
       break
     case 'share':
       shareOrder()
-      break
-    case 'syncPrice':
-      openSyncPrice()
-      break
-    case 'voucher':
-      goPayment()
-      break
-    case 'outbound':
-      handleOutbound()
       break
     case 'delete':
       handleDeleteOrder()
@@ -781,32 +799,6 @@ async function submitMarkPayment() {
   }
 }
 
-function handleOutbound() {
-  const o = order.value
-  if (!o) return
-  if (o.status === 'CANCELLED') {
-    uni.showToast({ title: '已取消订单无法出库', icon: 'none' })
-    return
-  }
-  if (o.amount != null && !['PENDING_CONFIRM', 'PENDING_PICK', 'PICKING', 'PENDING_PRICE'].includes(o.status)) {
-    uni.showToast({ title: '订单已录价完成', icon: 'none' })
-    return
-  }
-  uni.showModal({
-    title: '出库',
-    content: '按下单数量填入出库数并完成分拣，便于后续录价与对账。',
-    success: async (res) => {
-      if (!res.confirm) return
-      try {
-        order.value = await completeBossPick(orderId.value)
-        uni.showToast({ title: '出库完成', icon: 'success' })
-      } catch (e) {
-        uni.showToast({ title: e instanceof Error ? e.message : '出库失败', icon: 'none' })
-      }
-    },
-  })
-}
-
 function handleDeleteOrder() {
   if (order.value?.status === 'CANCELLED') {
     uni.showToast({ title: '订单已取消', icon: 'none' })
@@ -873,21 +865,60 @@ function goEdit() {
 }
 
 function goPrint() {
-  uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${orderId.value}` })
-}
-
-async function handleConfirm() {
-  try {
-    order.value = await confirmBossOrder(orderId.value)
-    uni.showToast({ title: '已确认交货', icon: 'success' })
-  } catch (e) {
-    uni.showToast({ title: e instanceof Error ? e.message : '确认失败', icon: 'none' })
-  }
+  const mode = canSendStatement.value ? 'send' : 'detail'
+  uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${orderId.value}&mode=${mode}` })
 }
 
 function goPick() {
   if (pickButtonDisabled.value) return
-  uni.navigateTo({ url: `/pages/boss/orders/pick/index?id=${orderId.value}` })
+  const o = order.value
+  if (!o) return
+
+  if (o.status === 'PENDING_CONFIRM') {
+    uni.showModal({
+      title: '确认订单',
+      content: '是否确认订单？按确认之后将扣减对应库存，下一步可进行拣单配送',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          order.value = await confirmBossOrder(orderId.value)
+          await refreshBossOrderAlert({ notify: false })
+          uni.showToast({ title: '已确认', icon: 'success' })
+        } catch (e) {
+          uni.showToast({ title: e instanceof Error ? e.message : '确认失败', icon: 'none' })
+        }
+      },
+    })
+    return
+  }
+
+  if (o.status === 'PENDING_PICK' || o.status === 'PICKING') {
+    uni.showModal({
+      title: '完成拣单',
+      content: '确认员工已完成装货？将标记为「已拣单」。',
+      success: async (res) => {
+        if (!res.confirm) return
+        try {
+          order.value = await completeBossPick(orderId.value)
+          await refreshBossOrderAlert({ notify: false })
+          uni.showToast({ title: '已拣单', icon: 'success' })
+          setTimeout(() => {
+            uni.showModal({
+              title: '下一步：录价',
+              content: '拣单已完成，是否前往录入商品价格？',
+              confirmText: '去录价',
+              cancelText: '稍后',
+              success: (modalRes) => {
+                if (modalRes.confirm) goPricing()
+              },
+            })
+          }, 400)
+        } catch (e) {
+          uni.showToast({ title: e instanceof Error ? e.message : '操作失败', icon: 'none' })
+        }
+      },
+    })
+  }
 }
 
 function goPricing() {
@@ -907,9 +938,21 @@ function formatMoney(value?: number | null) {
 function outboundQty(line: OrderLineItem) {
   if (line.actualQty == null) {
     if (line.shortageFlag === 1) return `0${line.unit}`
-    return '未出库'
+    return '未拣单'
   }
   return `${line.actualQty}${line.unit}`
+}
+
+function stockText(line: OrderLineItem) {
+  if (line.stockQty == null) return '—'
+  const qty = Number(line.stockQty)
+  if (Number.isNaN(qty)) return '—'
+  return `${qty % 1 === 0 ? qty : qty.toFixed(2)}${line.unit}`
+}
+
+function isStockInsufficient(line: OrderLineItem) {
+  if (line.stockQty == null) return false
+  return Number(line.stockQty) < Number(line.orderQty || 0)
 }
 
 function lineSubtotal(line: OrderLineItem) {
@@ -1144,8 +1187,8 @@ function lineSubtotal(line: OrderLineItem) {
 .table-row {
   display: flex;
   align-items: flex-start;
-  gap: 8rpx;
-  font-size: 24rpx;
+  gap: 4rpx;
+  font-size: 22rpx;
 }
 
 .table-head {
@@ -1165,12 +1208,18 @@ function lineSubtotal(line: OrderLineItem) {
 }
 
 .col-qty,
+.col-stock,
 .col-out,
 .col-price,
 .col-sub {
   flex: 1;
   text-align: center;
   flex-shrink: 0;
+}
+
+.col-stock.warn {
+  color: $boss-warn;
+  font-weight: 600;
 }
 
 .line-name {
@@ -1209,7 +1258,22 @@ function lineSubtotal(line: OrderLineItem) {
 
 .detail-bar {
   gap: 12rpx;
-  align-items: flex-end;
+  align-items: center;
+}
+
+.bar-tools {
+  display: flex;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.bar-actions {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
 }
 
 .bar-tool {
@@ -1221,6 +1285,31 @@ function lineSubtotal(line: OrderLineItem) {
   flex-shrink: 0;
   font-size: 22rpx;
   color: $boss-ink-secondary;
+}
+
+.bar-print-btn {
+  flex-shrink: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 28rpx;
+  font-size: 28rpx;
+  color: $boss-green-deep;
+  background: $boss-surface;
+  border: 2rpx solid $boss-green;
+  border-radius: $boss-radius;
+  font-weight: 600;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.bar-print-btn.primary {
+  min-width: 220rpx;
+  padding: 0 36rpx;
+  color: #fff;
+  background: $boss-green;
+  border: none;
+  font-size: 30rpx;
+  box-shadow: 0 6rpx 20rpx rgba(7, 193, 96, 0.28);
 }
 
 .bar-outline {
@@ -1237,7 +1326,9 @@ function lineSubtotal(line: OrderLineItem) {
 }
 
 .bar-primary {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 160rpx;
+  max-width: 100%;
   height: 88rpx;
   line-height: 88rpx;
   margin: 0;
@@ -1260,7 +1351,9 @@ function lineSubtotal(line: OrderLineItem) {
 }
 
 .bar-pay {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 160rpx;
+  max-width: 100%;
   height: 88rpx;
   line-height: 88rpx;
   margin: 0;

@@ -32,18 +32,27 @@
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
-import { bindCustomerByInvite, fetchBindStatus } from '../../../api/customer'
-import { useUserStore } from '../../../stores/user'
+import { bindCustomerByInvite, fetchBindStatus } from '@common/api/customer'
+import { useUserStore } from '@common/stores/user'
+import { applyEntryQuery } from '@common/utils/tenant'
 
 const userStore = useUserStore()
 const inviteCode = ref('')
 const loading = ref(false)
 
+onLoad((query) => {
+  applyEntryQuery(query as Record<string, string | undefined>)
+  const ctxCode = query?.code
+  if (ctxCode) {
+    inviteCode.value = String(ctxCode).trim().toUpperCase()
+  }
+})
+
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   if (userStore.customerId) {

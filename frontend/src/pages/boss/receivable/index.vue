@@ -49,9 +49,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchBossCustomers, type CustomerItem } from '../../../api/customer'
-import AppIcon from '../../../components/AppIcon.vue'
-import { useUserStore } from '../../../stores/user'
+import { fetchBossCustomers, type CustomerItem } from '@common/api/customer'
+import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@common/stores/user'
 
 const userStore = useUserStore()
 const customers = ref<CustomerItem[]>([])
@@ -74,7 +74,7 @@ const totalDebt = computed(() =>
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/pages/login/index' })
+    uni.reLaunch({ url: '/packages/common/login/index' })
     return
   }
   loading.value = true

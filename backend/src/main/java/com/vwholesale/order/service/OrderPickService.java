@@ -30,18 +30,13 @@ import java.util.stream.Collectors;
 public class OrderPickService {
 
     private static final Set<String> PICKABLE_STATUSES = Set.of(
-            OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
-            OrderStatus.PICKING,
-            OrderStatus.PICKED,
-            OrderStatus.PENDING_PRICE
+            OrderStatus.PICKING
     );
 
     private static final Set<String> EDITABLE_STATUSES = Set.of(
-            OrderStatus.PENDING_CONFIRM,
             OrderStatus.PENDING_PICK,
-            OrderStatus.PICKING,
-            OrderStatus.PICKED
+            OrderStatus.PICKING
     );
 
     private final OrderMapper orderMapper;
@@ -64,8 +59,7 @@ public class OrderPickService {
         RoleChecker.requireBoss();
         Order order = getOrderOrThrow(orderId);
         assertPickable(order);
-        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())
-                || OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
             order.setStatus(OrderStatus.PICKING);
             orderMapper.updateById(order);
         }
@@ -101,7 +95,9 @@ public class OrderPickService {
             }
         }
         orderItemMapper.updateById(item);
-        orderItemStockService.syncPickStock(item);
+        if (request.getActualQty() != null || request.getShortageFlag() != null) {
+            orderItemStockService.syncPickStock(item);
+        }
         return orderService.getDetail(orderId);
     }
 
@@ -155,12 +151,13 @@ public class OrderPickService {
     public OrderVO completePick(Long orderId) {
         RoleChecker.requireBoss();
         Order order = getOrderOrThrow(orderId);
-        if (!PICKABLE_STATUSES.contains(order.getStatus())) {
+        normalizeForPick(order);
+        if (!EDITABLE_STATUSES.contains(order.getStatus()) && !OrderStatus.PICKING.equals(order.getStatus())) {
             throw BusinessException.of(400, "当前订单不可完成分拣");
         }
-        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())
-                || OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
             order.setStatus(OrderStatus.PICKING);
+            orderMapper.updateById(order);
         }
 
         List<OrderItem> items = listItems(orderId);
@@ -170,37 +167,42 @@ public class OrderPickService {
                     item.setActualQty(BigDecimal.ZERO);
                 }
             } else if (item.getActualQty() == null) {
-                item.setActualQty(BigDecimal.ZERO);
+                BigDecimal orderQty = item.getOrderQty() != null ? item.getOrderQty() : BigDecimal.ZERO;
+                item.setActualQty(orderQty);
             } else {
                 item.setActualQty(clampActualQty(item, item.getActualQty()));
             }
             orderItemMapper.updateById(item);
-            orderItemStockService.syncPickStock(item);
         }
 
-        order.setStatus(OrderStatus.PENDING_PRICE);
+        order.setStatus(OrderStatus.PICKED);
         orderMapper.updateById(order);
         return orderService.getDetail(orderId);
     }
 
+    private void normalizeForPick(Order order) {
+        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())) {
+            throw BusinessException.of(400, "请先确认订单");
+        }
+        if (OrderStatus.PENDING_PRICE.equals(order.getStatus()) && order.getAmount() == null) {
+            order.setStatus(OrderStatus.PENDING_PICK);
+            orderMapper.updateById(order);
+        }
+    }
+
     private void assertPickable(Order order) {
+        normalizeForPick(order);
         if (!PICKABLE_STATUSES.contains(order.getStatus())) {
             throw BusinessException.of(400, "当前订单状态不支持分拣");
-        }
-        if (OrderStatus.PENDING_PRICE.equals(order.getStatus()) && order.getAmount() != null) {
-            throw BusinessException.of(400, "订单已录价，无需分拣");
         }
     }
 
     private void ensureEditing(Order order) {
-        if (!EDITABLE_STATUSES.contains(order.getStatus()) && !OrderStatus.PICKING.equals(order.getStatus())) {
-            if (OrderStatus.PENDING_PRICE.equals(order.getStatus()) && order.getAmount() == null) {
-                return;
-            }
+        normalizeForPick(order);
+        if (!EDITABLE_STATUSES.contains(order.getStatus())) {
             throw BusinessException.of(400, "当前订单状态不可编辑分拣信息");
         }
-        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())
-                || OrderStatus.PENDING_PICK.equals(order.getStatus())) {
+        if (OrderStatus.PENDING_PICK.equals(order.getStatus())) {
             order.setStatus(OrderStatus.PICKING);
             orderMapper.updateById(order);
         }
