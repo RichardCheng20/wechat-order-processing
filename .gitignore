@@ -3,5 +3,7 @@
 *.iml
 .env
 scripts/deploy-prod.env
+**/application-prod.yml
+docs/test.yml
 *.log
 .cursor/
