@@ -40,4 +40,6 @@ public class Order {
     private LocalDateTime updatedAt;
     private LocalDateTime printedAt;
     private String statementImageUrl;
+    /** 客户拍照/图片识别下单时的原始图片 */
+    private String sourceImageUrl;
 }

@@ -7,9 +7,10 @@ DELETE FROM purchase_payments;
 DELETE FROM orders;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- 库存初始化：所有在售商品统一 100（可按需改数值）
+-- 库存初始化：所有在售商品统一 100（可按需改数值），占用清零
 UPDATE products
 SET stock_qty = 100.00,
+    reserved_qty = 0.00,
     updated_at = NOW()
 WHERE deleted = 0;
 

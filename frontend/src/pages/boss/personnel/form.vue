@@ -119,7 +119,7 @@ const isEdit = computed(() => personnelId.value > 0)
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   personnelId.value = Number(query?.id || 0)
@@ -193,7 +193,7 @@ async function handleSave() {
       await updatePersonnel(personnelId.value, payload)
     } else {
       const created = await createPersonnel(payload)
-      if (created.workerCode) {
+      if (created.workerCode && form.jobRole === 'DELIVERY') {
         workerCode.value = created.workerCode
         personnelId.value = created.id
         uni.showModal({

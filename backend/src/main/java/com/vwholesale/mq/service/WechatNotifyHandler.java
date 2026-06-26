@@ -98,7 +98,7 @@ public class WechatNotifyHandler {
     private List<String> findBossOpenids() {
         Set<String> openids = new LinkedHashSet<>();
         List<User> bosses = userMapper.selectList(new LambdaQueryWrapper<User>()
-                .in(User::getRole, UserRole.OWNER_ADMIN.name(), UserRole.STALL_MANAGER.name())
+                .in(User::getRole, UserRole.OWNER_ADMIN.name(), UserRole.STALL_OWNER.name(), UserRole.STALL_MANAGER.name())
                 .isNotNull(User::getOpenid)
                 .ne(User::getOpenid, ""));
         for (User user : bosses) {

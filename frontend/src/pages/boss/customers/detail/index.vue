@@ -35,7 +35,7 @@
       <view class="settings-card">
         <view class="setting-row">
           <text class="setting-label">客户编号</text>
-          <text class="setting-value">{{ customer.customerNo || customer.id }}</text>
+          <text class="setting-value">{{ customer.customerNo || '—' }}</text>
         </view>
         <view class="setting-row">
           <text class="setting-label">结款方式</text>
@@ -138,7 +138,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   await loadDetail()

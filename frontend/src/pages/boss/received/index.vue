@@ -47,7 +47,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   loading.value = true

@@ -1,6 +1,7 @@
 package com.vwholesale.order.controller;
 
 import com.vwholesale.common.response.ApiResponse;
+import com.vwholesale.merchant.service.DataPlatformPasswordService;
 import com.vwholesale.order.dto.BossDashboardVO;
 import com.vwholesale.order.dto.BossOrderCreateRequest;
 import com.vwholesale.order.dto.BossOrderUpdateRequest;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +36,7 @@ import java.util.Map;
 public class BossOrderController {
 
     private final OrderService orderService;
+    private final DataPlatformPasswordService dataPlatformPasswordService;
 
     @Operation(summary = "今日订单概览")
     @GetMapping("/orders/summary")
@@ -49,7 +52,9 @@ public class BossOrderController {
 
     @Operation(summary = "经营数据统计")
     @GetMapping("/dashboard")
-    public ApiResponse<BossDashboardVO> dashboard() {
+    public ApiResponse<BossDashboardVO> dashboard(
+            @RequestHeader(value = "X-Data-Platform-Password", required = false) String password) {
+        dataPlatformPasswordService.requirePassword(password);
         return ApiResponse.ok(orderService.bossDashboard());
     }
 

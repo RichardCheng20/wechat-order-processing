@@ -38,6 +38,8 @@ public class OrderVO {
     private String paymentStatusLabel;
     private Boolean printed;
     private String statementImageUrl;
+    /** 客户下单原始图片（拍照识别等） */
+    private String sourceImageUrl;
     /** 该客户当前累计欠款（已对账/已完成未结清合计） */
     private BigDecimal customerOutstandingAmount;
     private Long assignedWorkerId;

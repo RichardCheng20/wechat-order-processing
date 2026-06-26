@@ -40,10 +40,14 @@
           <AppIcon class="grid-icon" name="quote" tone="red" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">报价单管理</text>
         </view>
+        <view class="grid-item" @tap="goInventory">
+          <AppIcon class="grid-icon" name="inventory" tone="blue" :size="28" :tile-size="88" :radius="22" />
+          <text class="grid-label">库存管理</text>
+        </view>
       </view>
     </view>
 
-    <view v-if="userStore.isOwnerAdmin" class="section-card">
+    <view v-if="userStore.canViewDataPlatform" class="section-card">
       <text class="section-title block">数据平台</text>
       <view class="grid compact">
         <view
@@ -74,6 +78,7 @@
     </view>
 
     <BossTabbar active="mine" />
+    <DataPlatformPasswordPopup />
   </view>
 </template>
 
@@ -83,7 +88,10 @@ import { onShow } from '@dcloudio/uni-app'
 import { fetchBossProfile, type BossProfile } from '@common/api/profile'
 import AppIcon from '@/components/AppIcon.vue'
 import BossTabbar from '@/components/boss-tabbar/index.vue'
+import DataPlatformPasswordPopup from '@/components/DataPlatformPasswordPopup.vue'
 import { useUserStore } from '@common/stores/user'
+import { useDataPlatformAccessStore } from '@common/stores/dataPlatformAccess'
+import { clearDataPlatformPassword } from '@common/utils/boss-access'
 import { useBossOrderAlertOnShow } from '@common/utils/boss-order-alert'
 import { useBossAlertStore } from '@common/stores/bossAlert'
 
@@ -92,14 +100,14 @@ const bossAlert = useBossAlertStore()
 provide('bossAlert', bossAlert)
 const { onBossPageShow } = useBossOrderAlertOnShow()
 const profile = ref<BossProfile>({
-  merchantName: '',
-  contactName: '',
+  merchantName: userStore.merchantName || '',
+  contactName: userStore.nickname || '',
   region: '',
   phone: '',
 })
 
 const displayName = computed(() => profile.value.contactName || userStore.nickname || '老板')
-const displaySub = computed(() => profile.value.merchantName || profile.value.region || '点击设置企业信息')
+const displaySub = computed(() => profile.value.merchantName || userStore.merchantName || profile.value.region || '点击设置企业信息')
 const avatarText = computed(() => (displayName.value || '店').slice(0, 1))
 
 const dataPlatformItems = [
@@ -107,8 +115,8 @@ const dataPlatformItems = [
   { label: '客户报表', icon: 'report', color: 'green' as const, path: '/pages/boss/customer-report/index' },
   { label: '客户排行', icon: 'ranking', color: 'purple' as const, path: '/pages/boss/ranking/customers/index' },
   { label: '商品排行', icon: 'product', color: 'red' as const, path: '/pages/boss/ranking/products/index' },
-  { label: '供应商报表', icon: 'supplier', color: 'orange' as const },
-  { label: '库存报表', icon: 'inventory', color: 'blue' as const },
+  { label: '供应商报表', icon: 'supplier', color: 'orange' as const, path: '/pages/boss/supplier-report/index' },
+  { label: '库存报表', icon: 'inventory', color: 'blue' as const, path: '/pages/boss/inventory-report/index' },
 ]
 
 const commonItems = [
@@ -118,13 +126,22 @@ const commonItems = [
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
+  clearDataPlatformPassword()
   try {
-    profile.value = await fetchBossProfile()
-  } catch {
-    // 保留默认值
+    const data = await fetchBossProfile()
+    profile.value = data
+    userStore.syncLocalProfile(data)
+  } catch (e) {
+    if (!profile.value.contactName && userStore.nickname) {
+      profile.value.contactName = userStore.nickname
+    }
+    if (!profile.value.merchantName && userStore.merchantName) {
+      profile.value.merchantName = userStore.merchantName
+    }
+    uni.showToast({ title: e instanceof Error ? e.message : '加载资料失败', icon: 'none' })
   }
   await onBossPageShow()
 })
@@ -153,16 +170,25 @@ function goQuotes() {
   uni.navigateTo({ url: '/pages/boss/quotes/index' })
 }
 
+function goInventory() {
+  uni.navigateTo({ url: '/pages/boss/inventory/index' })
+}
+
 function showComingSoon(name: string) {
   uni.showToast({ title: `${name}即将上线`, icon: 'none' })
 }
 
 function handleDataPlatformTap(item: { label: string; path?: string }) {
-  if (item.path) {
-    uni.navigateTo({ url: item.path })
+  if (!item.path) {
+    showComingSoon(item.label)
     return
   }
-  showComingSoon(item.label)
+  const accessStore = useDataPlatformAccessStore()
+  accessStore.ensureAccess().then((ok) => {
+    if (ok) {
+      uni.navigateTo({ url: item.path! })
+    }
+  })
 }
 
 function handleCommonTap(item: { label: string; action: string }) {

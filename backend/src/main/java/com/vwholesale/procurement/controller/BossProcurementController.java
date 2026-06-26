@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,13 +64,22 @@ public class BossProcurementController {
         return ApiResponse.ok(procurementTaskService.fetchReferencePurchasePrice(productId, receiveDate));
     }
 
-    @Operation(summary = "提交采购价")
+    @Operation(summary = "向供应商下单（可多次、多供应商）")
     @PostMapping("/products/{productId}/submit-price")
     public ApiResponse<ProcurementProductDetailVO> submitPrice(
             @PathVariable Long productId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate receiveDate,
             @Valid @RequestBody ProcurementPurchasePriceSubmitRequest request) {
         return ApiResponse.ok(procurementTaskService.submitPurchasePrice(productId, receiveDate, request));
+    }
+
+    @Operation(summary = "删除某条供应商采购明细")
+    @DeleteMapping("/products/{productId}/supplier-orders/{lineId}")
+    public ApiResponse<ProcurementProductDetailVO> deleteSupplierOrder(
+            @PathVariable Long productId,
+            @PathVariable Long lineId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate receiveDate) {
+        return ApiResponse.ok(procurementTaskService.deleteSupplierOrder(productId, lineId, receiveDate));
     }
 
     @Operation(summary = "更新商品库存")

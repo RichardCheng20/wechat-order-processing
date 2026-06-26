@@ -16,7 +16,10 @@ public class ProcurementTaskItemVO {
     private Long categoryId;
     private String unit;
     private BigDecimal demandQty;
+    /** 可用库存 = 实物 - 占用 */
     private BigDecimal stockQty;
+    private BigDecimal physicalStockQty;
+    private BigDecimal reservedQty;
     private BigDecimal needQty;
     private BigDecimal purchasePrice;
     private BigDecimal totalAmount;

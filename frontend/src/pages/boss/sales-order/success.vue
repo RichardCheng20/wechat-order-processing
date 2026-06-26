@@ -38,7 +38,7 @@ const customerName = ref('')
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   orderId.value = Number(query?.id || 0)

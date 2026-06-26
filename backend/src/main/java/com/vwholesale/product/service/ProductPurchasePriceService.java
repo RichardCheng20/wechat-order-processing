@@ -84,4 +84,12 @@ public class ProductPurchasePriceService {
     public void upsertPurchasePrice(Long productId, BigDecimal purchasePrice, LocalDate date) {
         upsertPurchasePrice(productId, purchasePrice, null, date);
     }
+
+    public void updatePurchasedQty(Long productId, BigDecimal purchasedQty, LocalDate date) {
+        ProductPurchasePriceRecord existing = findRecord(productId, date);
+        if (existing != null) {
+            existing.setPurchasedQty(purchasedQty != null ? purchasedQty : BigDecimal.ZERO);
+            productPurchasePriceMapper.updateById(existing);
+        }
+    }
 }

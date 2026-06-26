@@ -16,6 +16,7 @@ public class Supplier {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long merchantId;
+    private String supplierNo;
     private String name;
     private String contactName;
     private String phone;

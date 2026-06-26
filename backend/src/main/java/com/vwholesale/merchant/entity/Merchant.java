@@ -21,6 +21,7 @@ public class Merchant {
     /** 档口开通码，首个微信认领主管理员 */
     private String onboardingToken;
     private Long ownerUserId;
+    private String dataPlatformPasswordHash;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

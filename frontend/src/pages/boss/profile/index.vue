@@ -83,7 +83,7 @@ const form = reactive({
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   await loadProfile()
@@ -130,7 +130,7 @@ async function handleSave() {
       contactName: form.contactName.trim(),
       phone: form.phone.trim() || undefined,
     })
-    userStore.updateLocalNickname(profile.contactName)
+    userStore.syncLocalProfile(profile)
     uni.showToast({ title: '保存成功', icon: 'success' })
     setTimeout(() => uni.navigateBack(), 400)
   } catch (e) {

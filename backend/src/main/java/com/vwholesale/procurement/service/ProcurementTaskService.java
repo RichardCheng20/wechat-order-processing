@@ -16,6 +16,8 @@ import com.vwholesale.procurement.dto.ProcurementCustomerLineVO;
 import com.vwholesale.procurement.dto.ProcurementProductDetailVO;
 import com.vwholesale.procurement.dto.ProcurementPurchasePriceSubmitRequest;
 import com.vwholesale.procurement.dto.ProcurementStockUpdateRequest;
+import com.vwholesale.procurement.dto.ProcurementSupplierOptionVO;
+import com.vwholesale.procurement.dto.ProcurementSupplierOrderLineVO;
 import com.vwholesale.procurement.dto.ProcurementTaskItemVO;
 import com.vwholesale.procurement.dto.ProcurementTaskVO;
 import com.vwholesale.product.entity.Product;
@@ -25,6 +27,9 @@ import com.vwholesale.product.mapper.ProductCategoryMapper;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.product.service.ProductPurchasePriceService;
 import com.vwholesale.product.service.ProductService;
+import com.vwholesale.product.support.ProductStockSupport;
+import com.vwholesale.supplier.entity.Supplier;
+import com.vwholesale.supplier.mapper.SupplierMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +58,8 @@ public class ProcurementTaskService {
     private final ProductCategoryMapper productCategoryMapper;
     private final CustomerMapper customerMapper;
     private final ProductPurchasePriceService productPurchasePriceService;
+    private final SupplierMapper supplierMapper;
+    private final SupplierPurchaseLineService supplierPurchaseLineService;
     private final MerchantContext merchantContext;
 
     public ProcurementTaskVO listTasks(LocalDate receiveDate, String keyword, Long categoryId) {
@@ -148,8 +155,10 @@ public class ProcurementTaskService {
         BigDecimal demandQty = productItems.stream()
                 .map(this::itemQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal stockQty = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
-        BigDecimal needQty = demandQty.subtract(stockQty).max(BigDecimal.ZERO);
+        BigDecimal physicalStock = ProductStockSupport.physicalStock(product);
+        BigDecimal reservedQty = ProductStockSupport.reservedQty(product);
+        BigDecimal availableStock = ProductStockSupport.availableStock(product);
+        BigDecimal needQty = demandQty.subtract(physicalStock).max(BigDecimal.ZERO);
         boolean priced = purchasePrice != null && purchasePrice.compareTo(BigDecimal.ZERO) > 0;
         BigDecimal priceForAmount = purchasePrice != null ? purchasePrice : BigDecimal.ZERO;
         BigDecimal lineAmount = priceForAmount.multiply(needQty).setScale(2, RoundingMode.HALF_UP);
@@ -171,7 +180,9 @@ public class ProcurementTaskService {
                 .categoryId(product.getCategoryId())
                 .unit(resolveUnit(productItems, product))
                 .demandQty(demandQty)
-                .stockQty(stockQty)
+                .stockQty(availableStock)
+                .physicalStockQty(physicalStock)
+                .reservedQty(reservedQty)
                 .needQty(needQty)
                 .purchasePrice(priced ? purchasePrice : null)
                 .totalAmount(lineAmount)
@@ -287,32 +298,41 @@ public class ProcurementTaskService {
         BigDecimal demandQty = productItems.stream()
                 .map(this::itemQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal stockQty = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
-        BigDecimal needQty = demandQty.subtract(stockQty).max(BigDecimal.ZERO);
+        BigDecimal physicalStock = ProductStockSupport.physicalStock(product);
+        BigDecimal reservedQty = ProductStockSupport.reservedQty(product);
+        BigDecimal availableStock = ProductStockSupport.availableStock(product);
+        BigDecimal needQty = demandQty.subtract(physicalStock).max(BigDecimal.ZERO);
         BigDecimal defaultPrice = product.getDefaultPurchasePrice() != null
                 ? product.getDefaultPurchasePrice() : BigDecimal.ZERO;
         BigDecimal purchasePrice = productPurchasePriceService.resolvePurchasePrice(productId, defaultPrice, date);
         boolean priced = purchasePrice != null && purchasePrice.compareTo(BigDecimal.ZERO) > 0;
-        ProductPurchasePriceRecord purchaseRecord = productPurchasePriceService.findRecord(productId, date);
-        BigDecimal purchasedQtyToday = purchaseRecord != null && purchaseRecord.getPurchasedQty() != null
-                ? purchaseRecord.getPurchasedQty() : BigDecimal.ZERO;
 
         List<ProcurementCustomerLineVO> customerLines = buildCustomerLines(productItems, workspace);
+        List<ProcurementSupplierOrderLineVO> supplierOrders =
+                supplierPurchaseLineService.listForProduct(productId, date);
+        BigDecimal totalPurchasedFromSuppliers = supplierOrders.stream()
+                .map(ProcurementSupplierOrderLineVO::getPurchasedQty)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return ProcurementProductDetailVO.builder()
+        return enrichWithSupplier(ProcurementProductDetailVO.builder()
                 .productId(productId)
                 .productName(product.getName())
                 .unit(resolveUnit(productItems, product))
                 .receiveDate(date)
                 .demandQty(demandQty)
-                .stockQty(stockQty)
+                .stockQty(availableStock)
+                .physicalStockQty(physicalStock)
+                .reservedQty(reservedQty)
                 .needQty(needQty)
                 .purchasePrice(priced ? purchasePrice : null)
-                .purchasedQtyToday(purchasedQtyToday.compareTo(BigDecimal.ZERO) > 0 ? purchasedQtyToday : null)
+                .purchasedQtyToday(totalPurchasedFromSuppliers.compareTo(BigDecimal.ZERO) > 0
+                        ? totalPurchasedFromSuppliers : null)
+                .supplierOrders(supplierOrders)
                 .referencePurchasePrice(defaultPrice.compareTo(BigDecimal.ZERO) > 0 ? defaultPrice : null)
                 .priced(priced)
                 .customerLines(customerLines)
-                .build();
+                .build(), product);
     }
 
     public ProcurementProductDetailVO fetchReferencePurchasePrice(Long productId, LocalDate receiveDate) {
@@ -330,28 +350,23 @@ public class ProcurementTaskService {
                                                           ProcurementPurchasePriceSubmitRequest request) {
         RoleChecker.requireBoss();
         LocalDate date = receiveDate != null ? receiveDate : LocalDate.now();
-        Product product = getProductOrThrow(productId);
+        getProductOrThrow(productId);
 
-        ProductPurchasePriceRecord existingRecord = productPurchasePriceService.findRecord(productId, date);
-        BigDecimal oldPurchasedQty = existingRecord != null && existingRecord.getPurchasedQty() != null
-                ? existingRecord.getPurchasedQty() : BigDecimal.ZERO;
-        BigDecimal newPurchasedQty = request.getPurchasedQty() != null
-                ? request.getPurchasedQty() : oldPurchasedQty;
+        supplierPurchaseLineService.upsertLine(
+                productId,
+                request.getSupplierId(),
+                date,
+                request.getPurchasePrice(),
+                request.getPurchasedQty());
 
-        productPurchasePriceService.upsertPurchasePrice(productId, request.getPurchasePrice(), newPurchasedQty, date);
+        return getProductDetail(productId, date);
+    }
 
-        if (request.getPurchasedQty() != null) {
-            BigDecimal delta = newPurchasedQty.subtract(oldPurchasedQty);
-            if (delta.compareTo(BigDecimal.ZERO) != 0) {
-                BigDecimal currentStock = product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO;
-                product.setStockQty(currentStock.add(delta).max(BigDecimal.ZERO));
-                productMapper.updateById(product);
-            }
-        }
-
-        product.setDefaultPurchasePrice(request.getPurchasePrice());
-        productMapper.updateById(product);
-
+    @Transactional
+    public ProcurementProductDetailVO deleteSupplierOrder(Long productId, Long lineId, LocalDate receiveDate) {
+        RoleChecker.requireBoss();
+        LocalDate date = receiveDate != null ? receiveDate : LocalDate.now();
+        supplierPurchaseLineService.deleteLine(lineId);
         return getProductDetail(productId, date);
     }
 
@@ -366,18 +381,45 @@ public class ProcurementTaskService {
         try {
             return getProductDetail(productId, date);
         } catch (BusinessException ex) {
-            return ProcurementProductDetailVO.builder()
+            Product refreshed = getProductOrThrow(productId);
+            return enrichWithSupplier(ProcurementProductDetailVO.builder()
                     .productId(productId)
-                    .productName(product.getName())
-                    .unit(product.getUnit())
+                    .productName(refreshed.getName())
+                    .unit(refreshed.getUnit())
                     .receiveDate(date)
-                    .stockQty(request.getStockQty())
+                    .physicalStockQty(request.getStockQty())
+                    .reservedQty(ProductStockSupport.reservedQty(refreshed))
+                    .stockQty(ProductStockSupport.availableStock(refreshed))
                     .demandQty(BigDecimal.ZERO)
                     .needQty(BigDecimal.ZERO)
                     .priced(false)
                     .customerLines(List.of())
-                    .build();
+                    .build(), refreshed);
         }
+    }
+
+    private ProcurementProductDetailVO enrichWithSupplier(ProcurementProductDetailVO detail, Product product) {
+        List<ProcurementSupplierOptionVO> options = supplierMapper.selectList(
+                        new LambdaQueryWrapper<Supplier>()
+                                .eq(Supplier::getMerchantId, merchantContext.currentMerchantId())
+                                .eq(Supplier::getStatus, 1)
+                                .orderByAsc(Supplier::getName))
+                .stream()
+                .map(s -> ProcurementSupplierOptionVO.builder()
+                        .id(s.getId())
+                        .supplierNo(s.getSupplierNo())
+                        .name(s.getName())
+                        .build())
+                .toList();
+
+        detail.setSupplierOptions(options);
+        if (detail.getSupplierOrders() != null && !detail.getSupplierOrders().isEmpty()) {
+            ProcurementSupplierOrderLineVO first = detail.getSupplierOrders().get(0);
+            detail.setSupplierId(first.getSupplierId());
+            detail.setSupplierName(first.getSupplierName());
+            detail.setSupplierNo(first.getSupplierNo());
+        }
+        return detail;
     }
 
     private List<ProcurementCustomerLineVO> buildCustomerLines(List<OrderItem> productItems,

@@ -31,6 +31,15 @@ public class FileUploadService {
 
     public FileUploadVO upload(MultipartFile file) {
         RoleChecker.requireBoss();
+        return storeImage(file);
+    }
+
+    public FileUploadVO uploadForCustomer(MultipartFile file) {
+        RoleChecker.requireCustomer();
+        return storeImage(file);
+    }
+
+    private FileUploadVO storeImage(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw BusinessException.of(400, "请选择图片");
         }

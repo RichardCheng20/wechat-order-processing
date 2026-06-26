@@ -103,7 +103,7 @@
           <view v-for="line in salesOrder.items" :key="line.lineKey" class="selected-line">
             <view class="selected-line-main">
               <text class="selected-name">{{ line.productName }}</text>
-              <text class="selected-meta">{{ line.orderQty }}{{ line.unit }}<text v-if="line.dealPrice != null"> · ¥{{ line.dealPrice }}</text></text>
+              <text class="selected-meta">{{ line.orderQty }}{{ line.unit }}<text v-if="!skipPriceEntry && line.dealPrice != null"> · ¥{{ line.dealPrice }}</text></text>
             </view>
             <text class="selected-del" @tap="removeLine(line.lineKey)">删除</text>
           </view>
@@ -161,7 +161,7 @@
               <text v-else class="field-placeholder">0</text>
             </view>
           </view>
-          <view class="order-field" @tap="focusField('price')">
+          <view v-if="!skipPriceEntry" class="order-field" @tap="focusField('price')">
             <text class="field-label">单价 (元/{{ entryUnit }})</text>
             <view class="field-box" :class="{ active: activeField === 'price' }">
               <text v-if="entryPrice" class="field-value">{{ entryPrice }}</text>
@@ -172,7 +172,7 @@
 
         <view class="order-footer-row">
           <text class="remark-link" @tap="openRemarkInput">添加备注</text>
-          <text class="order-total">共：¥ {{ entryTotal }}</text>
+          <text v-if="!skipPriceEntry" class="order-total">共：¥ {{ entryTotal }}</text>
         </view>
         <text v-if="entryRemark" class="order-remark-preview">备注：{{ entryRemark }}</text>
 
@@ -186,7 +186,7 @@
             <view class="key" @tap="inputKey('4')">4</view>
             <view class="key" @tap="inputKey('5')">5</view>
             <view class="key" @tap="inputKey('6')">6</view>
-            <view class="key fn" @tap="nextField">下一个</view>
+            <view class="key fn" @tap="skipPriceEntry ? openRemarkInput() : nextField()">{{ skipPriceEntry ? '备注' : '下一个' }}</view>
 
             <view class="key" @tap="inputKey('7')">7</view>
             <view class="key" @tap="inputKey('8')">8</view>
@@ -218,6 +218,7 @@ type EntryField = 'qty' | 'price'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
+const skipPriceEntry = computed(() => salesOrder.editOrderId != null)
 const loading = ref(false)
 const keyword = ref('')
 const categories = ref<CategoryItem[]>([])
@@ -276,7 +277,7 @@ const entryTotal = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   categories.value = await fetchBossCategories()
@@ -382,9 +383,11 @@ function openEntryWithUnit(item: ProductItem, unit: string) {
   entryProduct.value = item
   entryUnit.value = unit
   entryQty.value = existing ? String(existing.orderQty) : ''
-  entryPrice.value = existing?.dealPrice != null
-    ? String(existing.dealPrice)
-    : (item.defaultPrice != null ? String(item.defaultPrice) : '')
+  entryPrice.value = skipPriceEntry.value
+    ? ''
+    : (existing?.dealPrice != null
+      ? String(existing.dealPrice)
+      : (item.defaultPrice != null ? String(item.defaultPrice) : ''))
   entryRemark.value = existing?.pickRemark || ''
   activeField.value = 'qty'
   showEntry.value = true
@@ -467,13 +470,13 @@ function confirmEntry() {
     activeField.value = 'qty'
     return
   }
-  const price = entryPrice.value ? Number(entryPrice.value) : undefined
+  const price = skipPriceEntry.value ? undefined : (entryPrice.value ? Number(entryPrice.value) : undefined)
   salesOrder.upsertLine({
     productId: entryProduct.value.id,
     productName: entryProduct.value.name,
     unit: entryUnit.value,
     orderQty: qty,
-    dealPrice: price,
+    ...(price != null ? { dealPrice: price } : {}),
     pickRemark: entryRemark.value.trim() || undefined,
   })
   closeEntry()

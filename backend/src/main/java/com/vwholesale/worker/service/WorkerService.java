@@ -5,8 +5,8 @@ import com.vwholesale.common.context.MerchantContext;
 import com.vwholesale.common.enums.UserRole;
 import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.common.exception.BusinessException;
-import com.vwholesale.common.security.RoleChecker;
 import com.vwholesale.user.entity.User;
+import com.vwholesale.user.mapper.UserMapper;
 import com.vwholesale.worker.dto.PersonnelCreateRequest;
 import com.vwholesale.worker.dto.PersonnelUpdateRequest;
 import com.vwholesale.worker.dto.WorkerVO;
@@ -25,6 +25,7 @@ import java.util.List;
 public class WorkerService {
 
     private final WorkerMapper workerMapper;
+    private final UserMapper userMapper;
     private final MerchantContext merchantContext;
 
     public List<WorkerVO> listForBoss() {
@@ -67,7 +68,33 @@ public class WorkerService {
         worker.setPhone(phone);
         worker.setJobRole(PersonnelJobRole.normalize(request.getJobRole()));
         workerMapper.updateById(worker);
+        syncBoundUserRole(worker);
         return toVO(worker);
+    }
+
+    private void syncBoundUserRole(Worker worker) {
+        if (worker.getUserId() == null) {
+            return;
+        }
+        User user = userMapper.selectById(worker.getUserId());
+        if (user == null) {
+            return;
+        }
+        String targetRole = resolveUserRoleFromJobRole(worker.getJobRole());
+        if (!targetRole.equals(user.getRole())) {
+            user.setRole(targetRole);
+            userMapper.updateById(user);
+        }
+    }
+
+    private static String resolveUserRoleFromJobRole(String jobRole) {
+        if (PersonnelJobRole.isStallOwner(jobRole)) {
+            return UserRole.STALL_OWNER.name();
+        }
+        if (PersonnelJobRole.isStallManager(jobRole)) {
+            return UserRole.STALL_MANAGER.name();
+        }
+        return UserRole.WORKER.name();
     }
 
     @Transactional

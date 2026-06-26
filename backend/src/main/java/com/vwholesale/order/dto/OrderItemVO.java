@@ -19,6 +19,6 @@ public class OrderItemVO {
     private BigDecimal subtotalAmount;
     private Integer shortageFlag;
     private String pickRemark;
-    /** 当前商品库存（详情展示用） */
+    /** 当前可用库存（详情展示用） */
     private BigDecimal stockQty;
 }

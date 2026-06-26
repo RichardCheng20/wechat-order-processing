@@ -20,6 +20,7 @@
       </view>
       <view v-if="task" class="summary-bar">
         <text>{{ task.productCount }}种 · 需采购 {{ formatQty(task.totalNeedQty) }} · 预估 ¥{{ formatMoney(task.totalAmount) }}</text>
+        <text class="help-btn" @tap.stop="showMetricHelp('overview')">?</text>
       </view>
     </view>
 
@@ -76,15 +77,24 @@
             </view>
             <view class="metric-row">
               <view class="metric">
-                <text class="metric-label">客户需求</text>
+                <view class="metric-label-row">
+                  <text class="metric-label">客户需求</text>
+                  <text class="help-btn tiny" @tap.stop="showMetricHelp('demand')">?</text>
+                </view>
                 <text class="metric-value">{{ formatQty(item.demandQty) }}{{ item.unit }}</text>
               </view>
               <view class="metric">
-                <text class="metric-label">库存</text>
-                <text class="metric-value">{{ formatQty(item.stockQty) }}{{ item.unit }}</text>
+                <view class="metric-label-row">
+                  <text class="metric-label">仓存</text>
+                  <text class="help-btn tiny" @tap.stop="showMetricHelp('available')">?</text>
+                </view>
+                <text class="metric-value">{{ formatQty(stockRemain(item)) }}{{ item.unit }}</text>
               </view>
               <view class="metric highlight">
-                <text class="metric-label">需采购</text>
+                <view class="metric-label-row">
+                  <text class="metric-label">需采购</text>
+                  <text class="help-btn tiny" @tap.stop="showMetricHelp('need')">?</text>
+                </view>
                 <text class="metric-value need">{{ formatQty(item.needQty) }}{{ item.unit }}</text>
               </view>
             </view>
@@ -103,6 +113,16 @@
     </view>
 
     <BossTabbar active="procurement" />
+
+    <u-popup :show="helpVisible" mode="center" round="16" @close="closeMetricHelp">
+      <view class="help-panel">
+        <text class="help-title">{{ helpTitle }}</text>
+        <scroll-view scroll-y class="help-body">
+          <text class="help-text">{{ helpContent }}</text>
+        </scroll-view>
+        <button class="help-ok" @tap="closeMetricHelp">知道了</button>
+      </view>
+    </u-popup>
   </view>
 </template>
 
@@ -117,6 +137,10 @@ import { useUserStore } from '@common/stores/user'
 import { useBossOrderAlertOnShow } from '@common/utils/boss-order-alert'
 import { useBossAlertStore } from '@common/stores/bossAlert'
 import { buildPrimarySidebar, getParentCategory } from '@common/utils/category'
+import {
+  getProcurementMetricHelp,
+  type ProcurementMetricHelpKey,
+} from '@common/utils/procurement-metric-help'
 
 const userStore = useUserStore()
 const bossAlert = useBossAlertStore()
@@ -129,6 +153,21 @@ const keyword = ref('')
 const receiveDate = ref('')
 const categoryFilter = ref('all')
 const subCategoryFilter = ref('all')
+
+const helpVisible = ref(false)
+const helpTitle = ref('')
+const helpContent = ref('')
+
+function showMetricHelp(key: ProcurementMetricHelpKey) {
+  const item = getProcurementMetricHelp(key)
+  helpTitle.value = item.title
+  helpContent.value = item.content
+  helpVisible.value = true
+}
+
+function closeMetricHelp() {
+  helpVisible.value = false
+}
 
 const sidebarItems = computed(() => buildPrimarySidebar(categories.value))
 const activeParent = computed(() => getParentCategory(categories.value, categoryFilter.value))
@@ -159,7 +198,7 @@ const displayItems = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   if (!receiveDate.value) {
@@ -247,6 +286,11 @@ function formatMoney(value?: number | null) {
   return Number(value).toFixed(2)
 }
 
+function stockRemain(item: ProcurementTaskItem) {
+  if (item.customItem) return 0
+  return item.physicalStockQty ?? item.stockQty ?? 0
+}
+
 function formatQty(value?: number) {
   if (value == null) return '0'
   return Number(value).toFixed(2).replace(/\.?0+$/, '') || '0'
@@ -307,6 +351,10 @@ function formatQty(value?: number) {
 }
 
 .summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
   margin: 0 -20rpx;
   padding: 16rpx 20rpx;
   background: #fff7e6;
@@ -474,8 +522,14 @@ function formatQty(value?: number) {
   background: #fff7e6;
 }
 
+.metric-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+}
+
 .metric-label {
-  display: block;
   font-size: 20rpx;
   color: #999;
 }
@@ -519,5 +573,68 @@ function formatQty(value?: number) {
   text-align: center;
   font-size: 24rpx;
   color: #ccc;
+}
+
+.help-btn {
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  line-height: 36rpx;
+  text-align: center;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #e67e22;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1rpx solid #ffd591;
+  border-radius: 50%;
+}
+
+.help-btn.tiny {
+  width: 28rpx;
+  height: 28rpx;
+  line-height: 28rpx;
+  font-size: 20rpx;
+  color: #999;
+  background: #f5f5f5;
+  border-color: #e8e8e8;
+}
+
+.help-panel {
+  width: 620rpx;
+  max-width: 86vw;
+  padding: 32rpx 28rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.help-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #111;
+  text-align: center;
+}
+
+.help-body {
+  max-height: 52vh;
+  margin-top: 20rpx;
+}
+
+.help-text {
+  display: block;
+  font-size: 26rpx;
+  line-height: 1.65;
+  color: #555;
+  white-space: pre-wrap;
+}
+
+.help-ok {
+  margin-top: 24rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  font-size: 28rpx;
+  color: #fff;
+  background: $boss-green;
+  border: none;
+  border-radius: 12rpx;
 }
 </style>

@@ -80,7 +80,7 @@ const canMarkPicked = computed(() => taskStatus.value === 'PENDING_PICK' || task
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || userStore.role !== 'WORKER') {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   taskId.value = Number(query?.id || 0)

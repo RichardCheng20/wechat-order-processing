@@ -149,7 +149,7 @@ const filteredByKeyword = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return customers.value
   return customers.value.filter((item) => {
-    const hay = `${item.name} ${item.contactName || ''} ${item.phone || ''}`.toLowerCase()
+    const hay = `${item.name} ${item.customerNo || ''} ${item.contactName || ''} ${item.phone || ''}`.toLowerCase()
     return hay.includes(kw)
   })
 })
@@ -177,7 +177,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   await loadData()

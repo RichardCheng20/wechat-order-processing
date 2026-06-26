@@ -8,6 +8,7 @@ import { onLoad } from '@dcloudio/uni-app'
 function homeByRole(role: string): string {
   switch (role) {
     case 'OWNER_ADMIN':
+    case 'STALL_OWNER':
     case 'STALL_MANAGER':
       return '/pages/boss/orders/index'
     case 'WORKER':
@@ -49,7 +50,7 @@ onLoad((query) => {
     } catch {
       // ignore
     }
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
   }
   setTimeout(jump, 50)
 })

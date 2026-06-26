@@ -171,7 +171,7 @@ function closeHelp() {
 }
 
 onShow(async () => {
-  if (!guardOwnerAdminPage()) return
+  if (!(await guardOwnerAdminPage())) return
   try {
     dashboard.value = await fetchBossDashboard()
   } catch {

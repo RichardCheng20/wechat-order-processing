@@ -113,7 +113,7 @@
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
-import { createCustomerOrder } from '@common/api/order'
+import { createCustomerOrder, uploadCustomerOrderImage } from '@common/api/order'
 import AppIcon from '@/components/AppIcon.vue'
 import { useCartStore, type CartItem } from '@common/stores/cart'
 import { useUserStore } from '@common/stores/user'
@@ -130,7 +130,7 @@ const editRemark = ref('')
 
 onShow(() => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   if (!userStore.customerId) {
@@ -247,6 +247,15 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
+    let sourceImageUrl: string | undefined
+    if (cartStore.sourceImagePath) {
+      uni.showLoading({ title: '上传图片' })
+      try {
+        sourceImageUrl = await uploadCustomerOrderImage(cartStore.sourceImagePath)
+      } finally {
+        uni.hideLoading()
+      }
+    }
     const payload = {
       items: cartStore.items.map((item) => {
         if (item.custom) {
@@ -265,6 +274,7 @@ async function handleSubmit() {
         }
       }),
       remark: remark.value || undefined,
+      ...(sourceImageUrl ? { sourceImageUrl } : {}),
       ...(userStore.customerId ? {} : { customerName: shopName.value.trim() }),
     }
     const order = await createCustomerOrder(payload)

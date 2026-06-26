@@ -160,6 +160,19 @@ docker exec -i vwholesale-mysql mysql -u vwholesale -pvwholesale vwholesale \
 
 ---
 
+## 老板端 API 冒烟测试（近期功能）
+
+客户/供应商/报表/采购等接口一键验证：
+
+```bash
+cd backend
+BASE_URL=http://localhost:8080 ./scripts/smoke-test-boss-apis.sh
+```
+
+用例与结果见 [smoke-test-report.md](./smoke-test-report.md)。**改后端代码后须重启 Spring Boot**，否则新接口（供应商报表、库存报表）会 404/500。
+
+---
+
 ## 注意事项
 
 - 以上脚本**仅用于本地/测试环境**，不要在生产库直接执行 `DELETE` / 全量重置类脚本。

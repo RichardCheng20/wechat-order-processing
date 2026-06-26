@@ -226,7 +226,7 @@ const yTicks = computed(() => {
 })
 
 onShow(async () => {
-  if (!guardOwnerAdminPage()) return
+  if (!(await guardOwnerAdminPage())) return
   if (!dateFrom.value) {
     applyPreset(7)
     return

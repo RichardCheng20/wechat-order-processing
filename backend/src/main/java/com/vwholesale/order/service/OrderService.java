@@ -45,6 +45,7 @@ import com.vwholesale.product.entity.Product;
 import com.vwholesale.product.mapper.ProductMapper;
 import com.vwholesale.product.service.ProductPurchasePriceService;
 import com.vwholesale.product.service.ProductService;
+import com.vwholesale.product.support.ProductStockSupport;
 import com.vwholesale.supplier.entity.Supplier;
 import com.vwholesale.supplier.mapper.SupplierMapper;
 import com.vwholesale.worker.entity.Worker;
@@ -93,16 +94,27 @@ public class OrderService {
         RoleChecker.requireCustomer();
         Long customerId = RoleChecker.currentCustomerId();
 
-        List<OrderItemCreateRequest> items = request.getItems();
+        List<OrderItemCreateRequest> items = request.getItems() != null ? request.getItems() : List.of();
+        boolean imageOnly = items.isEmpty() && StringUtils.hasText(request.getSourceImageUrl());
+        if (items.isEmpty() && !StringUtils.hasText(request.getSourceImageUrl())) {
+            throw BusinessException.of(400, "请上传图片或选择至少一件商品");
+        }
         Map<Long, Product> productMap = loadCatalogProducts(items);
 
         Order order = new Order();
         order.setMerchantId(merchantContext.currentMerchantId());
         order.setOrderNo(generateOrderNo());
-        order.setSource("CUSTOMER_APP");
+        order.setSource(imageOnly ? "IMAGE" : "CUSTOMER_APP");
         order.setDeliveryDate(LocalDate.now());
-        order.setRemark(request.getRemark());
+        if (StringUtils.hasText(request.getRemark())) {
+            order.setRemark(request.getRemark().trim());
+        } else if (imageOnly) {
+            order.setRemark("客户提交图片订单，待老板录入明细");
+        }
         order.setCreatedBy(RoleChecker.currentUserId());
+        if (StringUtils.hasText(request.getSourceImageUrl())) {
+            order.setSourceImageUrl(request.getSourceImageUrl().trim());
+        }
 
         if (customerId != null) {
             Customer customer = getCustomerOrThrow(customerId);
@@ -150,6 +162,8 @@ public class OrderService {
             item.setShortageFlag(0);
             orderItemMapper.insert(item);
         }
+
+        orderItemStockService.applyOrderReservation(order.getId());
 
         orderEventAfterCommitPublisher.publishAfterCommit(
                 OrderEventMessage.orderCreated(order.getMerchantId(), order.getId()));
@@ -221,6 +235,8 @@ public class OrderService {
             orderItemMapper.insert(item);
         }
 
+        orderItemStockService.applyOrderReservation(order.getId());
+
         return getDetail(order.getId());
     }
 
@@ -260,6 +276,7 @@ public class OrderService {
         order.setSource(oldOrder.getSource());
         order.setDeliveryDate(request.getDeliveryDate() != null ? request.getDeliveryDate() : oldOrder.getDeliveryDate());
         order.setRemark(request.getRemark() != null ? request.getRemark() : oldOrder.getRemark());
+        order.setSourceImageUrl(oldOrder.getSourceImageUrl());
         order.setCreatedBy(RoleChecker.currentUserId());
         order.setStatus(resolveReorderInitialStatus(oldOrder));
 
@@ -294,6 +311,12 @@ public class OrderService {
             item.setPickRemark(itemReq.getPickRemark());
             item.setShortageFlag(0);
             orderItemMapper.insert(item);
+        }
+
+        if (OrderStatus.PENDING_CONFIRM.equals(order.getStatus())) {
+            orderItemStockService.applyOrderReservation(order.getId());
+        } else {
+            orderItemStockService.applyPhysicalStock(order.getId());
         }
 
         return getDetail(order.getId());
@@ -479,6 +502,11 @@ public class OrderService {
         Order order = getOrderOrThrow(id);
         if (!OrderStatus.PENDING_CONFIRM.equals(order.getStatus())) {
             throw BusinessException.of(400, "只有待确认订单可以确认");
+        }
+        long itemCount = orderItemMapper.selectCount(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, id));
+        if (itemCount <= 0) {
+            throw BusinessException.of(400, "请先录入订单商品后再确认");
         }
         order.setStatus(OrderStatus.PENDING_PICK);
         orderMapper.updateById(order);
@@ -1304,7 +1332,7 @@ public class OrderService {
                 .subtotalAmount(item.getSubtotalAmount())
                 .shortageFlag(item.getShortageFlag())
                 .pickRemark(item.getPickRemark())
-                .stockQty(product != null && product.getStockQty() != null ? product.getStockQty() : BigDecimal.ZERO)
+                .stockQty(product != null ? ProductStockSupport.availableStock(product) : BigDecimal.ZERO)
                 .build();
         }).toList();
 
@@ -1324,6 +1352,7 @@ public class OrderService {
                 .customerId(order.getCustomerId())
                 .customerName(displayName)
                 .source(order.getSource())
+                .sourceLabel(sourceLabel(order.getSource()))
                 .status(order.getStatus())
                 .statusLabel(OrderFlowStatus.flowStatusLabel(order, order.getAmount() == null || isPriceIncomplete(items), pickedItemCount, itemVOs.size()))
                 .deliveryAddressShort(order.getDeliveryAddressShort())
@@ -1343,6 +1372,7 @@ public class OrderService {
                 .pickedItemCount(pickedItemCount)
                 .printed(order.getPrintedAt() != null)
                 .statementImageUrl(order.getStatementImageUrl())
+                .sourceImageUrl(order.getSourceImageUrl())
                 .pickedByWorkerCode(pickedByWorkerCode)
                 .build();
     }
@@ -1374,6 +1404,7 @@ public class OrderService {
                 .assignedWorkerName(workerName)
                 .printed(order.getPrintedAt() != null)
                 .statementImageUrl(order.getStatementImageUrl())
+                .sourceImageUrl(order.getSourceImageUrl())
                 .build();
     }
 

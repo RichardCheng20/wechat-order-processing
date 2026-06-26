@@ -71,6 +71,23 @@
 
           <view v-if="order.remark" class="order-remark">备注：{{ order.remark }}</view>
 
+          <view v-if="order.sourceImageUrl && isImagePendingOrder" class="image-process-banner" @tap="goImageProcess">
+            <text class="banner-title">图片订单待处理</text>
+            <text class="banner-desc">客户仅提交了图片，请对照原图录入商品</text>
+            <text class="banner-action">去处理 ›</text>
+          </view>
+
+          <view v-if="order.sourceImageUrl" class="source-image-section">
+            <text class="source-image-title">客户原始下单图片</text>
+            <image
+              class="source-image"
+              :src="sourceImageSrc"
+              mode="widthFix"
+              @tap="previewSourceImage"
+            />
+            <text class="source-image-tip">点击图片可放大查看</text>
+          </view>
+
           <view class="finance-grid">
             <view class="finance-cell">
               <text class="finance-label">出库金额</text>
@@ -315,6 +332,7 @@ import {
 } from '@common/utils/delivery-note'
 import { isPaid, isPickDone } from '@common/utils/order-flow'
 import { refreshBossOrderAlert } from '@common/utils/boss-order-alert'
+import { resolveMediaUrl } from '@common/utils/media'
 
 const userStore = useUserStore()
 const salesOrder = useSalesOrderStore()
@@ -355,6 +373,14 @@ const isFullyPicked = computed(() => {
   const picked = o.pickedItemCount ?? countPickedFromItems()
   return total > 0 && picked >= total
 })
+
+const sourceImageSrc = computed(() => resolveMediaUrl(order.value?.sourceImageUrl))
+
+function previewSourceImage() {
+  const url = sourceImageSrc.value
+  if (!url) return
+  uni.previewImage({ urls: [url], current: url })
+}
 
 function countPickedFromItems() {
   const items = order.value?.items || []
@@ -459,6 +485,14 @@ const statementCanvasHeight = computed(() => {
 
 const isTemporaryOrder = computed(() => !order.value?.customerId)
 
+const isImagePendingOrder = computed(() => {
+  const o = order.value
+  if (!o) return false
+  return o.source === 'IMAGE'
+    && o.status === 'PENDING_CONFIRM'
+    && !(o.items || []).length
+})
+
 const moreMenuItems = computed<MoreMenuItem[]>(() => [
   { key: 'copy', label: '复制订单', icon: 'salesOrder', tone: 'gray' },
   { key: 'share', label: '分享', icon: 'invite', tone: 'gray' },
@@ -480,7 +514,7 @@ const payReceivableText = computed(() => {
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   orderId.value = Number(query?.id || 0)
@@ -864,6 +898,10 @@ function goEdit() {
   uni.navigateTo({ url: `/pages/boss/sales-order/index?orderId=${orderId.value}` })
 }
 
+function goImageProcess() {
+  uni.navigateTo({ url: `/pages/boss/orders/image-process/index?id=${orderId.value}` })
+}
+
 function goPrint() {
   const mode = canSendStatement.value ? 'send' : 'detail'
   uni.navigateTo({ url: `/pages/boss/orders/print/index?id=${orderId.value}&mode=${mode}` })
@@ -1120,6 +1158,64 @@ function lineSubtotal(line: OrderLineItem) {
   border-radius: 12rpx;
   font-size: 26rpx;
   color: #e67e22;
+}
+
+.source-image-section {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #eef0f2;
+}
+
+.image-process-banner {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  background: #fff7e6;
+  border: 1rpx solid #fde68a;
+  border-radius: 12rpx;
+}
+
+.banner-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.banner-desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #92400e;
+}
+
+.banner-action {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #0b7f3a;
+  font-weight: 600;
+}
+
+.source-image-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: $boss-ink;
+}
+
+.source-image {
+  display: block;
+  width: 100%;
+  margin-top: 16rpx;
+  border-radius: 12rpx;
+  background: #f5f6f8;
+}
+
+.source-image-tip {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #999;
 }
 
 .finance-grid {

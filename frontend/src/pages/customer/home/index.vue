@@ -231,6 +231,45 @@
       </view>
     </u-popup>
 
+    <u-popup :show="showImageOrderModal" mode="bottom" round="16" @close="closeImageOrderModal">
+      <view class="image-order-panel">
+        <view class="batch-head">
+          <text class="batch-close" @tap="closeImageOrderModal">×</text>
+          <text class="batch-title">提交图片订单</text>
+          <text class="batch-single" @tap="closeImageOrderModal">取消</text>
+        </view>
+        <image
+          v-if="imageOrderPath"
+          class="confirm-image"
+          :src="imageOrderPath"
+          mode="aspectFit"
+        />
+        <text class="image-order-hint">图片将直接发送给老板，由老板对照图片录入商品明细</text>
+        <view v-if="!userStore.customerId" class="image-order-field">
+          <text class="image-order-label">店铺/客户名称</text>
+          <input
+            v-model="imageOrderGuestName"
+            class="image-order-input"
+            type="text"
+            placeholder="请输入您的店铺或客户名称"
+          />
+        </view>
+        <view class="image-order-field">
+          <text class="image-order-label">备注（选填）</text>
+          <input
+            v-model="imageOrderRemark"
+            class="image-order-input"
+            type="text"
+            placeholder="如：上午送达、加急等"
+          />
+        </view>
+        <view class="confirm-actions">
+          <button class="confirm-secondary-btn" @tap="openManualEntryFromImage">手动录入商品</button>
+          <button class="confirm-primary-btn" :loading="imageOrderSubmitting" @tap="submitImageOrder">提交图片订单</button>
+        </view>
+      </view>
+    </u-popup>
+
     <u-popup :show="showVoiceModal" mode="bottom" round="16" @close="closeVoiceModal">
       <view class="batch-panel">
         <view class="batch-head">
@@ -336,7 +375,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
-import { parseOrderExcel } from '@common/api/orderImport'
+import { createCustomerOrder, parseOrderExcel, uploadCustomerOrderImage } from '@common/api/order'
 import { fetchBindStatus } from '@common/api/customer'
 import { fetchCustomerCategories, fetchCustomerProducts, type CategoryItem, type ProductItem } from '@common/api/product'
 import AppIcon from '@/components/AppIcon.vue'
@@ -346,7 +385,7 @@ import { useCartStore } from '@common/stores/cart'
 import { useUserStore } from '@common/stores/user'
 import { buildPrimarySidebar, getParentCategory } from '@common/utils/category'
 import { customerTabBarHeightPx } from '@common/utils/customer-nav'
-import { chooseImportExcel, chooseImportImage, openPhotoImportMenu as showPhotoImportMenu } from '@common/utils/orderImport'
+import { chooseImportExcel, chooseImportImage, openPhotoImportMenu as showPhotoImportMenu } from '../utils/orderImport'
 import { resolveMediaUrl } from '@common/utils/media'
 import { applyEntryQuery } from '@common/utils/tenant'
 import {
@@ -379,6 +418,11 @@ const confirmImage = ref('')
 const confirmPreview = ref<ParsedPreviewLine[]>([])
 const confirmApplying = ref(false)
 const confirmSource = ref<'batch' | 'voice' | 'photo' | 'excel'>('batch')
+const showImageOrderModal = ref(false)
+const imageOrderPath = ref('')
+const imageOrderRemark = ref('')
+const imageOrderGuestName = ref('')
+const imageOrderSubmitting = ref(false)
 const showEntry = ref(false)
 const showUnitPicker = ref(false)
 const entryProduct = ref<ProductItem | null>(null)
@@ -438,7 +482,7 @@ const entryUnits = computed(() => {
 onLoad(async (query) => {
   applyEntryQuery(query as Record<string, string | undefined>)
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   await syncCustomerProfile()
@@ -451,7 +495,7 @@ onReady(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   await nextTick()
@@ -767,6 +811,9 @@ function openConfirmModal(
   confirmText.value = text
   confirmImage.value = imagePath
   confirmSource.value = source
+  if (source === 'photo' && imagePath) {
+    cartStore.setSourceImagePath(imagePath)
+  }
   confirmPreview.value = []
   showConfirmModal.value = true
   reparseConfirmText()
@@ -831,10 +878,63 @@ function openPhotoImportMenu() {
 async function pickImportImage(sourceType: ('camera' | 'album')[]) {
   try {
     const path = await chooseImportImage(sourceType)
-    openConfirmModal('', 'photo', path)
+    imageOrderPath.value = path
+    imageOrderRemark.value = ''
+    imageOrderGuestName.value = cartStore.guestShopName || userStore.nickname || ''
+    showImageOrderModal.value = true
   } catch (e) {
     if (e instanceof Error && e.message === '已取消') return
     uni.showToast({ title: e instanceof Error ? e.message : '选择图片失败', icon: 'none' })
+  }
+}
+
+function closeImageOrderModal() {
+  showImageOrderModal.value = false
+  imageOrderPath.value = ''
+  imageOrderRemark.value = ''
+}
+
+function openManualEntryFromImage() {
+  const path = imageOrderPath.value
+  closeImageOrderModal()
+  if (path) {
+    openConfirmModal('', 'photo', path)
+  }
+}
+
+async function submitImageOrder() {
+  if (!imageOrderPath.value) {
+    uni.showToast({ title: '请先选择图片', icon: 'none' })
+    return
+  }
+  if (!userStore.customerId) {
+    const name = imageOrderGuestName.value.trim()
+    if (!name) {
+      uni.showToast({ title: '请输入店铺/客户名称', icon: 'none' })
+      return
+    }
+    cartStore.setGuestShopName(name)
+  }
+  imageOrderSubmitting.value = true
+  try {
+    uni.showLoading({ title: '提交中' })
+    const sourceImageUrl = await uploadCustomerOrderImage(imageOrderPath.value)
+    const order = await createCustomerOrder({
+      items: [],
+      sourceImageUrl,
+      remark: imageOrderRemark.value.trim() || undefined,
+      ...(userStore.customerId ? {} : { customerName: imageOrderGuestName.value.trim() }),
+    })
+    closeImageOrderModal()
+    uni.showToast({ title: '图片订单已提交', icon: 'success' })
+    setTimeout(() => {
+      uni.navigateTo({ url: `/pages/customer/orders/index?id=${order.id}` })
+    }, 500)
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '提交失败', icon: 'none' })
+  } finally {
+    uni.hideLoading()
+    imageOrderSubmitting.value = false
   }
 }
 
@@ -1708,5 +1808,36 @@ function updateMainHeight() {
 .confirm-secondary-btn::after,
 .confirm-primary-btn::after {
   border: none;
+}
+
+.image-order-panel {
+  padding: 24rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.image-order-hint {
+  display: block;
+  margin: 16rpx 0 8rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: #66736b;
+}
+
+.image-order-field {
+  margin-top: 20rpx;
+}
+
+.image-order-label {
+  display: block;
+  margin-bottom: 10rpx;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.image-order-input {
+  height: 80rpx;
+  padding: 0 20rpx;
+  font-size: 28rpx;
+  background: #f5f6f7;
+  border-radius: 12rpx;
 }
 </style>

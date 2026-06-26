@@ -6,10 +6,6 @@
         <text>个人信息</text>
         <text class="arrow">›</text>
       </view>
-      <view class="cell" @tap="showComingSoon('店铺信息')">
-        <text>店铺信息</text>
-        <text class="arrow">›</text>
-      </view>
       <view class="cell" @tap="showComingSoon('打印设置')">
         <text>打印设置</text>
         <text class="arrow">›</text>
@@ -20,6 +16,10 @@
       <text class="section-title">通用</text>
       <view class="cell" @tap="goMessages">
         <text>消息通知</text>
+        <text class="arrow">›</text>
+      </view>
+      <view v-if="userStore.canViewDataPlatform" class="cell" @tap="goDataPlatformPassword">
+        <text>数据平台密码</text>
         <text class="arrow">›</text>
       </view>
       <view class="cell" @tap="showComingSoon('帮助中心')">
@@ -54,7 +54,7 @@ const userStore = useUserStore()
 
 onShow(() => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
   }
 })
 
@@ -68,6 +68,10 @@ function goProfile() {
 
 function goMessages() {
   uni.navigateTo({ url: '/pages/boss/messages/index' })
+}
+
+function goDataPlatformPassword() {
+  uni.navigateTo({ url: '/pages/boss/settings/data-platform-password/index' })
 }
 
 function handleLogout() {

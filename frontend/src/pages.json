@@ -12,21 +12,15 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": ""
       }
+    },
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
     }
   ],
   "subPackages": [
-    {
-      "root": "packages/common",
-      "pages": [
-        {
-          "path": "login/index",
-          "style": {
-            "navigationBarTitleText": "登录"
-          }
-        }
-      ],
-      "independent": true
-    },
     {
       "root": "pages/customer",
       "pages": [
@@ -77,6 +71,12 @@
           "style": {
             "navigationBarTitleText": "订单详情",
             "disableScroll": true
+          }
+        },
+        {
+          "path": "orders/image-process/index",
+          "style": {
+            "navigationBarTitleText": "处理图片订单"
           }
         },
         {
@@ -152,6 +152,12 @@
           }
         },
         {
+          "path": "inventory/index",
+          "style": {
+            "navigationBarTitleText": "库存管理"
+          }
+        },
+        {
           "path": "sales-order/index",
           "style": {
             "navigationBarTitleText": "新建订单",
@@ -188,6 +194,19 @@
           "path": "purchase-order/index",
           "style": {
             "navigationBarTitleText": "采购开单"
+          }
+        },
+        {
+          "path": "purchase-order/products",
+          "style": {
+            "navigationBarTitleText": "选择采购商品",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "purchase-order/confirm",
+          "style": {
+            "navigationBarTitleText": "采购单预览"
           }
         },
         {
@@ -240,6 +259,24 @@
           }
         },
         {
+          "path": "supplier-report/index",
+          "style": {
+            "navigationBarTitleText": "供应商报表",
+            "navigationBarBackgroundColor": "#ff9500",
+            "navigationBarTextStyle": "white",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "inventory-report/index",
+          "style": {
+            "navigationBarTitleText": "库存报表",
+            "navigationBarBackgroundColor": "#1677ff",
+            "navigationBarTextStyle": "white",
+            "disableScroll": true
+          }
+        },
+        {
           "path": "ranking/products/index",
           "style": {
             "navigationBarTitleText": "商品排行",
@@ -277,13 +314,26 @@
         {
           "path": "suppliers/index",
           "style": {
-            "navigationBarTitleText": "供应商管理"
+            "navigationBarTitleText": "供应商管理",
+            "disableScroll": true
+          }
+        },
+        {
+          "path": "suppliers/detail/index",
+          "style": {
+            "navigationBarTitleText": "供应商详情"
           }
         },
         {
           "path": "settings/index",
           "style": {
             "navigationBarTitleText": "设置"
+          }
+        },
+        {
+          "path": "settings/data-platform-password/index",
+          "style": {
+            "navigationBarTitleText": "数据平台密码"
           }
         },
         {

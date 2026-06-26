@@ -170,7 +170,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { createBossPurchasePayment, uploadPaymentVoucher } from '@common/api/payment'
 import { fetchBossSuppliers, type SupplierItem } from '@common/api/supplier'
 import AppIcon from '@/components/AppIcon.vue'
@@ -197,6 +197,8 @@ const amountEditorDraft = ref('')
 const showAmountEditor = ref(false)
 const remark = ref('')
 const voucherPreviews = ref<VoucherPreview[]>([])
+const presetSupplierId = ref(0)
+const presetSupplierName = ref('')
 
 const deliveryLabel = computed(() => formatPaymentLabel(deliveryDay.value))
 
@@ -218,7 +220,7 @@ const pickerSuppliers = computed(() => {
   const kw = pickerKeyword.value.trim().toLowerCase()
   if (!kw) return allSuppliers.value
   return allSuppliers.value.filter((s) => {
-    const hay = `${s.name} ${s.contactName || ''} ${s.phone || ''}`.toLowerCase()
+    const hay = `${s.name} ${s.supplierNo || ''} ${s.contactName || ''} ${s.phone || ''}`.toLowerCase()
     return hay.includes(kw)
   })
 })
@@ -229,14 +231,36 @@ const canUseNewSupplierInPicker = computed(() => {
   return !allSuppliers.value.some((s) => s.name === name)
 })
 
+onLoad((query) => {
+  presetSupplierId.value = Number(query?.supplierId || 0)
+  presetSupplierName.value = query?.supplierName ? decodeURIComponent(String(query.supplierName)) : ''
+})
+
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   allSuppliers.value = await fetchBossSuppliers()
+  applyPresetSupplier()
   filterSuppliers()
 })
+
+function applyPresetSupplier() {
+  if (presetSupplierId.value) {
+    const found = allSuppliers.value.find((s) => s.id === presetSupplierId.value)
+    if (found) {
+      selectedSupplier.value = found
+      supplierKeyword.value = found.name
+      pendingSupplierName.value = ''
+      return
+    }
+  }
+  if (presetSupplierName.value) {
+    supplierKeyword.value = presetSupplierName.value
+    syncSupplierFromKeyword()
+  }
+}
 
 function formatPaymentLabel(day: 'today' | 'tomorrow') {
   const base = new Date()

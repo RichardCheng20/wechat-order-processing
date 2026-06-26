@@ -7,7 +7,7 @@ const API_TARGET = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8080";
 export default defineConfig({
   resolve: {
     alias: {
-      "@common": path.resolve(__dirname, "src/packages/common"),
+      "@common": path.resolve(__dirname, "src/shared"),
     },
   },
   plugins: [uni()],

@@ -59,7 +59,7 @@ const bindStatusText = computed(() => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   try {

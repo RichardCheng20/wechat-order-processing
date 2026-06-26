@@ -111,8 +111,8 @@
         </view>
 
         <view class="card-meta">
-          <view v-if="item.sourceLabel" class="source-tag">
-            <text>{{ item.sourceLabel }}</text>
+          <view v-if="item.sourceLabel" class="source-tag" :class="{ image: isImagePending(item) }">
+            <text>{{ isImagePending(item) ? '待处理图片' : item.sourceLabel }}</text>
           </view>
           <text class="order-time">下单时间 {{ item.createdAtText }}</text>
         </view>
@@ -349,7 +349,7 @@ onLoad((query) => {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   try {
@@ -620,11 +620,11 @@ function onFlowTap(key: FlowStepKey, item: OrderInfo) {
     switch (key) {
     case 'confirm':
     case 'confirmed':
-      goDetailById(item.id)
+      goDetailById(item.id, item)
       break
     case 'pick':
       if (canPick(item)) {
-        goPick(item.id)
+        goPick(item)
       } else if (isPickDone(item)) {
         uni.showToast({ title: '分拣已完成', icon: 'none' })
       } else {
@@ -637,7 +637,7 @@ function onFlowTap(key: FlowStepKey, item: OrderInfo) {
         return
       }
       if (isPriced(item)) {
-        goDetailById(item.id)
+        goDetailById(item.id, item)
       } else {
         uni.navigateTo({ url: `/pages/boss/pricing/detail/index?id=${item.id}` })
       }
@@ -646,22 +646,33 @@ function onFlowTap(key: FlowStepKey, item: OrderInfo) {
       handlePrint(item)
       break
     case 'pay':
-      goDetailById(item.id)
+      goDetailById(item.id, item)
       break
   }
 }
 
-function goDetailById(id: number) {
+function goDetailById(id: number, item?: OrderInfo) {
+  if (item && isImagePending(item)) {
+    uni.navigateTo({ url: `/pages/boss/orders/image-process/index?id=${id}` })
+    return
+  }
   uni.navigateTo({ url: `/pages/boss/orders/detail/index?id=${id}` })
 }
 
-function goPick(id: number) {
-  goDetailById(id)
+function isImagePending(item: OrderInfo) {
+  return item.source === 'IMAGE'
+    && item.status === 'PENDING_CONFIRM'
+    && !(item.itemCount || 0)
+}
+
+function goPick(item: OrderInfo) {
+  goDetailById(item.id, item)
 }
 
 function goDetail(e: { currentTarget: { dataset: { id?: string | number } } }) {
   const id = Number(e.currentTarget.dataset.id)
-  uni.navigateTo({ url: `/pages/boss/orders/detail/index?id=${id}` })
+  const item = orders.value.find((row) => row.id === id)
+  goDetailById(id, item)
 }
 
 function handlePrint(item: OrderInfo) {
@@ -1211,6 +1222,14 @@ function goPrintPage(id: number) {
   border: 1rpx solid #22c55e;
   border-radius: 6rpx;
   flex-shrink: 0;
+}
+
+.source-tag.image {
+  border-color: #f59e0b;
+}
+
+.source-tag.image text {
+  color: #e67e22;
 }
 
 .source-tag text {

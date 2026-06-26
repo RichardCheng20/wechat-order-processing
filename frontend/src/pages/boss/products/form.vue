@@ -272,7 +272,7 @@ const saleUnits = computed(() => {
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   if (query?.id) {

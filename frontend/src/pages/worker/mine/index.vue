@@ -44,7 +44,7 @@ const avatarText = computed(() => {
 
 onShow(() => {
   if (!userStore.isLoggedIn || userStore.role !== 'WORKER') {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
   }
 })
 

@@ -63,13 +63,14 @@
       <view class="items-card">
         <view class="items-head">
           <text class="items-title">共{{ salesOrder.totalKinds }}种商品</text>
-          <text class="items-action" @tap="showComingSoon('获取价格')">获取价格</text>
+          <text v-if="!skipPriceEntry" class="items-action" @tap="showComingSoon('获取价格')">获取价格</text>
+          <text v-else class="items-hint">录价在后续拣单/录价环节</text>
         </view>
-        <view class="table-head">
+        <view class="table-head" :class="{ 'no-price': skipPriceEntry }">
           <text class="col-name">商品名</text>
           <text class="col-qty">下单数</text>
           <text class="col-unit">单位</text>
-          <text class="col-price">单价(元)</text>
+          <text v-if="!skipPriceEntry" class="col-price">单价(元)</text>
           <text class="col-op" />
         </view>
 
@@ -79,7 +80,7 @@
             <text class="empty-link" @tap="goProducts">去商品库选品</text>
           </view>
 
-          <view v-for="line in salesOrder.items" :key="line.lineKey" class="table-row">
+          <view v-for="line in salesOrder.items" :key="line.lineKey" class="table-row" :class="{ 'no-price': skipPriceEntry }">
             <view class="col-name">
               <text class="line-name">{{ line.productName }}</text>
               <text v-if="line.pickRemark" class="line-remark">备注：{{ line.pickRemark }}</text>
@@ -99,6 +100,7 @@
               <text class="cell-value">{{ line.unit }}</text>
             </view>
             <view
+              v-if="!skipPriceEntry"
               class="col-price price-cell"
               :class="{ empty: line.dealPrice == null, active: editingLineKey === line.lineKey && numEditorMode === 'price' }"
               @tap="openPriceEditor(line)"
@@ -340,6 +342,7 @@ const filteredUnits = computed(() => filterUnits(allUnits.value, unitKeyword.val
 
 const deliveryLabel = computed(() => formatDeliveryLabel(salesOrder.deliveryDay))
 const isEditMode = computed(() => salesOrder.editOrderId != null)
+const skipPriceEntry = computed(() => isEditMode.value)
 const submitLabel = computed(() => (isEditMode.value ? '保存' : '提交'))
 
 const canUseTemporary = computed(() => {
@@ -375,7 +378,7 @@ const canUseTemporaryInPicker = computed(() => {
 
 onLoad((query) => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   editOrderId.value = Number(query?.orderId || 0)
@@ -395,7 +398,7 @@ async function loadEditOrder() {
 
 onShow(async () => {
   if (!userStore.isLoggedIn || !userStore.isBoss) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   allCustomers.value = await fetchBossCustomers()
@@ -435,7 +438,13 @@ async function handleRecognizedText(text: string) {
   }
   await ensureProducts()
   const result = applyParsedLines(parsed, allProducts.value, (line) => {
-    salesOrder.upsertLine(line)
+    salesOrder.upsertLine({
+      productId: line.productId,
+      productName: line.productName,
+      unit: line.unit,
+      orderQty: line.orderQty,
+      ...(skipPriceEntry.value ? {} : { dealPrice: line.dealPrice }),
+    })
   })
   if (result.added === 0) {
     uni.showToast({
@@ -1080,6 +1089,16 @@ async function handleSubmit() {
 .items-action {
   font-size: 26rpx;
   color: #2979ff;
+}
+
+.items-hint {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.table-head.no-price .col-name,
+.table-row.no-price .col-name {
+  flex: 3;
 }
 
 .table-head,

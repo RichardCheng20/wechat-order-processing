@@ -2,6 +2,7 @@ package com.vwholesale.customer.support;
 
 import com.vwholesale.common.exception.BusinessException;
 import com.vwholesale.customer.mapper.CustomerIdSequenceMapper;
+import com.vwholesale.customer.mapper.CustomerMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ public class CustomerNoGenerator {
     private static final int NO_LENGTH = 11;
 
     private final CustomerIdSequenceMapper sequenceMapper;
+    private final CustomerMapper customerMapper;
 
     @Transactional
     public String nextNo(Long merchantId) {
@@ -30,12 +32,21 @@ public class CustomerNoGenerator {
 
     @Transactional
     public String nextNo(Long merchantId, LocalDate date) {
+        syncSequence(merchantId, date);
         sequenceMapper.allocate(merchantId, date);
         int seq = sequenceMapper.currentSeq();
         if (seq < 1 || seq > MAX_DAILY_SEQ) {
             throw BusinessException.of(400, "当日客户编号已用尽（最多 " + MAX_DAILY_SEQ + " 个）");
         }
         return date.format(DATE_FMT) + String.format("%03d", seq);
+    }
+
+    private void syncSequence(Long merchantId, LocalDate date) {
+        String prefix = date.format(DATE_FMT);
+        Integer maxSeq = customerMapper.selectMaxSeqForDate(merchantId, prefix);
+        if (maxSeq != null && maxSeq > 0) {
+            sequenceMapper.syncMin(merchantId, date, maxSeq);
+        }
     }
 
     public static boolean matchesFormat(String customerNo) {

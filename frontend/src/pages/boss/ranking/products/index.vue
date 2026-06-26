@@ -83,7 +83,7 @@ const dateTypeOptions = [
 const dateTypeIndex = ref(0)
 
 onShow(async () => {
-  if (!guardOwnerAdminPage()) return
+  if (!(await guardOwnerAdminPage())) return
   if (!dateFrom.value) {
     applyPreset(7)
     return

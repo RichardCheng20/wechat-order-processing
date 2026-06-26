@@ -57,6 +57,12 @@
 
     <view v-if="detail" id="detail-panel" class="detail-panel">
       <text class="detail-title">订单明细</text>
+      <view v-if="isImagePendingDetail" class="image-pending-tip">
+        您已提交图片订单，老板将对照原图录入商品明细
+      </view>
+      <view v-if="!(detail.items || []).length && !isImagePendingDetail" class="empty-detail">
+        暂无商品明细
+      </view>
       <view v-for="line in detail.items || []" :key="line.id" class="line-item">
         <view class="line-main">
           <text class="line-name">{{ line.productName }}</text>
@@ -78,6 +84,17 @@
           :src="statementImageSrc"
           mode="widthFix"
           @tap="previewStatement"
+        />
+        <text class="statement-tip">点击图片可放大查看</text>
+      </view>
+
+      <view v-if="detail.sourceImageUrl" class="statement-section">
+        <text class="statement-title">原始下单图片</text>
+        <image
+          class="statement-image"
+          :src="sourceImageSrc"
+          mode="widthFix"
+          @tap="previewSourceImage"
         />
         <text class="statement-tip">点击图片可放大查看</text>
       </view>
@@ -138,6 +155,12 @@ const rangePickerVisible = ref(false)
 const canNotifyBoss = computed(() => detail.value?.status === 'PENDING_CONFIRM')
 
 const statementImageSrc = computed(() => resolveMediaUrl(detail.value?.statementImageUrl))
+const sourceImageSrc = computed(() => resolveMediaUrl(detail.value?.sourceImageUrl))
+const isImagePendingDetail = computed(() => {
+  const d = detail.value
+  if (!d) return false
+  return Boolean(d.sourceImageUrl) && !(d.items || []).length
+})
 
 const rangeLabel = computed(() => {
   if (!dateFrom.value || presetDays.value > 0) return ''
@@ -156,7 +179,7 @@ onShareAppMessage(() => buildSharePayload())
 
 onLoad(async (query) => {
   if (!userStore.isLoggedIn || !userStore.isCustomer) {
-    uni.reLaunch({ url: '/packages/common/login/index' })
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
   applyPreset(7, false)
@@ -319,6 +342,12 @@ function goHome() {
 
 function previewStatement() {
   const url = statementImageSrc.value
+  if (!url) return
+  uni.previewImage({ urls: [url], current: url })
+}
+
+function previewSourceImage() {
+  const url = sourceImageSrc.value
   if (!url) return
   uni.previewImage({ urls: [url], current: url })
 }
@@ -485,6 +514,23 @@ function previewStatement() {
   margin-bottom: 20rpx;
   font-size: 30rpx;
   font-weight: 600;
+}
+
+.image-pending-tip {
+  display: block;
+  margin-bottom: 16rpx;
+  padding: 20rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: #b45309;
+  background: #fff7e6;
+  border-radius: 12rpx;
+}
+
+.empty-detail {
+  padding: 8rpx 0 16rpx;
+  font-size: 26rpx;
+  color: #999;
 }
 
 .line-item {

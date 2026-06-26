@@ -54,9 +54,7 @@ public class ActivationService {
         if (worker.getUserId() != null) {
             throw BusinessException.of(400, "该人员已绑定微信，无需重复生成激活码");
         }
-        String targetRole = PersonnelJobRole.isStallManager(worker.getJobRole())
-                ? UserRole.STALL_MANAGER.name()
-                : UserRole.WORKER.name();
+        String targetRole = resolveUserRole(worker.getJobRole());
         return createToken(merchantId, workerId, targetRole, worker.getName());
     }
 
@@ -192,7 +190,7 @@ public class ActivationService {
             Worker worker = workerMapper.selectById(token.getWorkerId());
             workerName = worker != null ? worker.getName() : null;
         }
-        String roleLabel = UserRole.WORKER.name().equals(token.getTargetRole()) ? "员工" : "档口经理";
+        String roleLabel = activationRoleLabel(token.getTargetRole());
         return builder.entryType("STAFF")
                 .entryHint("登录后将绑定为" + roleLabel)
                 .activationRole(token.getTargetRole())
@@ -212,7 +210,7 @@ public class ActivationService {
     }
 
     private ActivationTokenVO toVO(StaffActivationToken token, String workerName) {
-        String roleLabel = UserRole.WORKER.name().equals(token.getTargetRole()) ? "员工" : "档口经理";
+        String roleLabel = activationRoleLabel(token.getTargetRole());
         return ActivationTokenVO.builder()
                 .token(token.getToken())
                 .targetRole(token.getTargetRole())
@@ -222,6 +220,29 @@ public class ActivationService {
                 .expiredAt(token.getExpiredAt())
                 .loginPath("pages/login/index?m=" + token.getMerchantId() + "&act=" + token.getToken())
                 .build();
+    }
+
+    private static String resolveUserRole(String jobRole) {
+        if (PersonnelJobRole.isStallOwner(jobRole)) {
+            return UserRole.STALL_OWNER.name();
+        }
+        if (PersonnelJobRole.isStallManager(jobRole)) {
+            return UserRole.STALL_MANAGER.name();
+        }
+        return UserRole.WORKER.name();
+    }
+
+    private static String activationRoleLabel(String targetRole) {
+        if (UserRole.STALL_OWNER.name().equals(targetRole)) {
+            return "档口老板";
+        }
+        if (UserRole.STALL_MANAGER.name().equals(targetRole)) {
+            return "档口经理";
+        }
+        if (UserRole.WORKER.name().equals(targetRole)) {
+            return "配送员";
+        }
+        return "员工";
     }
 
     private String generateToken() {

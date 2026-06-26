@@ -27,7 +27,10 @@
           </view>
           <view class="breakdown-item">
             <text class="tag tag-discount">折让</text>
-            <text class="breakdown-value">{{ formatMoney(summary?.discountAmount) }}</text>
+            <view class="breakdown-value-wrap">
+              <text class="breakdown-value">{{ formatMoney(summary?.discountAmount) }}</text>
+              <text class="info-icon" @tap.stop="showDiscountTip">?</text>
+            </view>
           </view>
           <view class="breakdown-item">
             <text class="tag tag-outstanding">未收</text>
@@ -96,7 +99,7 @@ const summary = ref<CustomerReportSummary | null>(null)
 const rows = ref<CustomerReportRow[]>([])
 
 onShow(async () => {
-  if (!guardOwnerAdminPage()) return
+  if (!(await guardOwnerAdminPage())) return
   if (!dateFrom.value) {
     applyPreset(7)
     return
@@ -145,6 +148,14 @@ async function loadData() {
 
 function formatMoney(value?: number) {
   return Number(value || 0).toFixed(2)
+}
+
+function showDiscountTip() {
+  uni.showModal({
+    title: '折让金额',
+    content: '收款时给客户的优惠总额，如抹零、少收等。在订单详情「标记收款」里填写「优惠」后会计入此项；未填写则为 0。',
+    showCancel: false,
+  })
 }
 
 function showOutstandingTip() {

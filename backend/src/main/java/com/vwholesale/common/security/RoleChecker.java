@@ -16,16 +16,22 @@ public final class RoleChecker {
         }
     }
 
-    /** 仅老板（主管理员）可查看数据平台 / 经营统计 */
+    /** 主管理员或档口老板可查看数据平台 / 经营统计 */
     public static void requireOwnerAdmin() {
         StpUtil.checkLogin();
-        if (!StpUtil.hasRole(UserRole.OWNER_ADMIN.name())) {
+        if (!canViewBusinessData()) {
             throw BusinessException.of(403, "仅老板可查看经营数据");
         }
     }
 
+    public static boolean canViewBusinessData() {
+        return StpUtil.hasRole(UserRole.OWNER_ADMIN.name())
+                || StpUtil.hasRole(UserRole.STALL_OWNER.name());
+    }
+
     public static boolean isBossRole() {
         return StpUtil.hasRole(UserRole.OWNER_ADMIN.name())
+                || StpUtil.hasRole(UserRole.STALL_OWNER.name())
                 || StpUtil.hasRole(UserRole.STALL_MANAGER.name())
                 || StpUtil.hasRole("PARTNER_ADMIN");
     }

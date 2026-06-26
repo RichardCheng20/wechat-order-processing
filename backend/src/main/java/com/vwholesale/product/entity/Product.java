@@ -17,6 +17,7 @@ public class Product {
     private Long id;
     private Long merchantId;
     private Long categoryId;
+    private Long supplierId;
     private String name;
     private String aliases;
     private String unit;
@@ -26,6 +27,7 @@ public class Product {
     private BigDecimal defaultPrice;
     private BigDecimal defaultPurchasePrice;
     private BigDecimal stockQty;
+    private BigDecimal reservedQty;
     private String saleStatus;
     @TableLogic
     private Integer deleted;
