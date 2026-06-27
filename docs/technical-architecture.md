@@ -2,8 +2,32 @@
 
 版本：v0.3  
 日期：2026-06-12  
-关联 PRD：`docs/vegetable-wholesale-miniapp-prd.md`
+关联 PRD：**[vegetable-wholesale-miniapp-prd.md](./vegetable-wholesale-miniapp-prd.md) v1.0**  
 开工清单：`docs/pre-development-checklist.md`
+
+> **文档索引**：[docs/README.md](./README.md)  
+> 下文 v0.3 为立项时设计；**§0 实现现状** 与 PRD v1.0 / 代码对齐（2026-06-27）。
+
+---
+
+## 0. 实现现状（与 v0.3 差异对照）
+
+| 项 | v0.3 文档 | 当前代码 |
+|----|-----------|----------|
+| 前端目录 | `src/api`、`src/utils` | **`src/shared/api`、`src/shared/utils`**，别名 `@common` |
+| API 路径 | `/api/products`、`/api/orders` 等扁平路径 | **`/api/boss/*`、`/api/customer/*`、`/api/worker/*`** |
+| 后端包 | 独立 price/pick/report/ai 等 | 合并进 **order / product / payment**；无 `/api/ai` |
+| MapStruct | 已确定 | **未引入**（`pom.xml` 无依赖） |
+| 角色 | 合伙人管理员 | **`STALL_OWNER`（档口老板）、`STALL_MANAGER`（档口经理）** |
+| 邀请码 | 默认 7 天 | **VIP 专属码绑定前长期有效**；注册邀请仍 7 天 |
+| 库存 | PRD 暂不 MVP | **已实现**（Flyway + 库存页 + 扣减） |
+| AI/OCR | 架构 §8 | **无后端 AI**；图片订单人工录入；文字解析在 `parseOrderText.ts` |
+| 消息队列 | 未写进 v0.3 正文 | **RabbitMQ**（可 `MQ_ENABLED=false` 关闭） |
+| 订单确认 | 部分文档写「确认已交货」 | **`PENDING_CONFIRM` → `PENDING_PICK`**，展示为「已确认」；见 [order_status.md](./order_status.md) |
+
+**权威参考**：运行中 Knife4j（`/doc.html`）、[order_status.md](./order_status.md)、[customer-onboarding.md](./customer-onboarding.md)。
+
+---
 
 ## 1. 技术决策结论
 
@@ -31,7 +55,7 @@
 | 合伙人权限 | 首版**固定权限子集**，不做逐项可配置 |
 | 客户下单确认 | 客户档案可配置 **自动确认**；未开启则进「待确认」 |
 | 客户端价格 | **下单阶段不展示价格**；订单无金额直至老板送达后录价；录价完成后客户可见订单金额 |
-| 邀请码有效期 | 默认 **7 天** |
+| 邀请码有效期 | VIP 专属码 **绑定前长期有效**；注册邀请默认 **7 天**（见 [customer-onboarding.md](./customer-onboarding.md)） |
 | 工人地址可见性 | 仅显示**客户简称 + 区域/门牌简写**，不显示电话和完整地址 |
 | 项目目录 | `docs/`、`backend/`、`frontend/` |
 

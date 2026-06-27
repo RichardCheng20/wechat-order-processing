@@ -1,6 +1,7 @@
 # 测试文档
 
-完整测试脚本与命令说明见：**[testing.md](./testing.md)**
+完整测试脚本与命令说明见：**[testing.md](./testing.md)**  
+文档索引：[README.md](./README.md)
 
 常用一键清空订单：
 

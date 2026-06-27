@@ -2,6 +2,9 @@
 
 版本：v0.3  
 日期：2026-06-12  
+
+> **归档说明**：立项阶段决策清单，多数项已落地。日常开发请以 [README.md](./README.md)、[technical-architecture.md](./technical-architecture.md) §0 为准。
+
 关联文档：
 
 - `docs/vegetable-wholesale-miniapp-prd.md`

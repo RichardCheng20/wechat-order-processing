@@ -1,39 +1,41 @@
 # 蔬菜批发小程序后端
 
-Java 21 + Spring Boot 3 + Sa-Token + MyBatis-Plus + Flyway
+Java 21 + Spring Boot 3 + Sa-Token + MyBatis-Plus + Flyway + RabbitMQ（可选）
 
 ## 前置条件
 
 - JDK 21
 - Maven 3.9+
-- Docker Desktop（用于 MySQL / Redis）
+- MySQL 8 + Redis + RabbitMQ（推荐 Docker，见下文）
 
 ## 快速启动
 
-### 1. 启动基础设施（MySQL + Redis + RabbitMQ）
+### 1. 启动基础设施
 
 ```bash
 cd backend/docker
 docker compose up -d
 ```
 
-RabbitMQ 管理台：http://localhost:15672（账号/密码 `vwholesale` / `vwholesale`）
+| 服务 | 端口 | 账号 |
+|------|------|------|
+| MySQL | 3306 | `vwholesale` / `vwholesale`，库名 `vwholesale` |
+| Redis | 6379 | 无密码 |
+| RabbitMQ | 5672 / 15672 | `vwholesale` / `vwholesale` |
 
-若暂不启用消息队列，可设置环境变量 `MQ_ENABLED=false`，系统将回退为同步处理。
+管理台：http://localhost:15672
+
+暂不启用消息队列时：
+
+```bash
+export MQ_ENABLED=false
+```
 
 ### 2. 启动后端
 
-`~/.zshrc` 已配置 JDK 21 时，新开终端后：
+必须在 **`backend/`** 目录执行（项目根目录会报 `No plugin found for prefix 'spring-boot'`）：
 
 ```bash
-cd backend
-mvn spring-boot:run
-```
-
-若提示找不到 Java：
-
-```bash
-source backend/scripts/dev-env.sh
 cd backend
 mvn spring-boot:run
 ```
@@ -41,93 +43,101 @@ mvn spring-boot:run
 - API 文档：http://localhost:8080/doc.html
 - 健康检查：http://localhost:8080/api/health
 
-**注意：**
+修改 Java 代码或 Flyway 迁移后需**重启**后端。8080 被占用时先结束旧进程。
 
-- 必须在 `backend/` 目录执行，项目根目录运行会报 `No plugin found for prefix 'spring-boot'`
-- 8080 已被占用说明旧进程还在，先结束再启动
-- 修改 Java 代码或 Flyway 迁移后需重启后端
-
-### 3. 启动前端（小程序）
-
-首次安装依赖：
+JDK 未找到时：
 
 ```bash
-cd frontend
-npm install --legacy-peer-deps
+source backend/scripts/dev-env.sh
+cd backend && mvn spring-boot:run
 ```
 
-开发编译：
+### 3. 本地微信 / 太阳码（可选）
 
-```bash
-cd frontend
-npm run dev:mp-weixin
+复制并编辑（勿提交 Git）：
+
+```text
+src/main/resources/application-dev-local.example.yml
+  → application-dev-local.yml
 ```
 
-用微信开发者工具打开目录：`frontend/dist/dev/mp-weixin`
+填入 `app-secret`；仅开发者工具联调时设 `env-version: develop`。  
+`application-dev.yml` 会自动 import 该文件。
 
-- 模拟器默认连 `http://127.0.0.1:8080`
-- 真机调试在登录页配置局域网后端 IP
+未配置微信时使用 **dev-login** 联调（见 [docs/testing.md](../docs/testing.md)）。
 
-### 4. 配置环境变量（可选）
-
-微信正式登录需配置：
-
-```bash
-export WECHAT_APP_ID=你的AppID
-export WECHAT_APP_SECRET=你的AppSecret
-```
-
-或在 `application-dev.yml` / 环境变量中配置。
-
-主管理员白名单（openid）在 `application.yml` 的 `app.admin.openid-whitelist` 中配置。
-
-本地开发未配置微信时，可使用 **开发登录接口**：
-
-```bash
-curl -X POST http://localhost:8080/api/auth/dev-login \
-  -H 'Content-Type: application/json' \
-  -d '{"openid":"dev-owner-001","nickname":"老板","role":"OWNER_ADMIN"}'
-```
-
-## 常用命令速查
+## 常用命令
 
 | 步骤 | 命令 |
 |------|------|
 | 基础设施 | `cd backend/docker && docker compose up -d` |
 | 后端 | `cd backend && mvn spring-boot:run` |
-| **API 冒烟测试** | `./scripts/smoke-api.sh`（需后端已启动） |
-| 前端（首次） | `cd frontend && npm install --legacy-peer-deps` |
-| 前端（开发） | `cd frontend && npm run dev:mp-weixin` |
-| 前端（构建） | `cd frontend && npm run build:mp-weixin` |
+| API 冒烟（仓库根） | `../scripts/smoke-api.sh` 或于项目根 `./scripts/smoke-api.sh` |
+| 老板 API 详细冒烟 | `BASE_URL=http://localhost:8080 ./scripts/smoke-test-boss-apis.sh` |
+
+## API 前缀
+
+| 前缀 | 说明 |
+|------|------|
+| `/api/auth` | 微信登录、dev-login、退出 |
+| `/api/customer` | 客户端：商品、下单、绑定、注册 |
+| `/api/boss` | 老板端：订单、商品、客户、采购、收款、报表等 |
+| `/api/worker` | 工人端：拣单任务 |
+| `/api/config` | 公共配置 |
+| `/api/health` | 健康检查 |
+
+完整接口以 Knife4j（`/doc.html`）或各 `*Controller.java` 为准。
 
 ## 目录说明
 
 ```text
 backend/
-  scripts/       本地测试/数据脚本（见 docs/testing.md）
+  docker/              MySQL + Redis + RabbitMQ
+  scripts/             联调 SQL、smoke-test-boss-apis.sh
   src/main/java/com/vwholesale/
-    auth/          登录鉴权
-    user/          用户
-    common/        公共配置、响应、异常
-  src/main/resources/db/migration/   Flyway 迁移脚本
-  docker/          MySQL + Redis + RabbitMQ
+    auth/              登录鉴权、WechatClient
+    user/              用户实体
+    common/            配置、异常、MerchantContext、Health
+    customer/          客户 CRUD、VIP 码、注册审核
+    product/           商品、分类、库存、报价单
+    order/             订单、拣单、录价、统计
+    dispatch/          派单
+    payment/           销售收款、采购付款、文件上传
+    procurement/       采购任务
+    supplier/          供应商
+    worker/            人员管理
+    merchant/          档口资料、档口下单码、数据平台密码
+    mq/                RabbitMQ 消费者
+  src/main/resources/
+    application.yml              默认 profile: dev
+    application-dev.yml            本地连接配置
+    application-dev-local.example.yml  私密配置模板
+    db/migration/                  Flyway 迁移（V1…）
 ```
 
 ## 消息队列（RabbitMQ）
 
-订单相关异步任务通过 RabbitMQ 处理，队列与交换机均开启**持久化**：
-
 | 队列 | 用途 |
 |------|------|
-| `vwholesale.queue.wechat.notify` | 客户提醒老板（微信订阅消息，失败重试 3 次） |
-| `vwholesale.queue.stats.refresh` | 订单/收款事件后刷新老板端统计缓存 |
+| `vwholesale.queue.wechat.notify` | 微信订阅消息（失败重试） |
+| `vwholesale.queue.stats.refresh` | 老板端统计缓存刷新 |
 | `vwholesale.queue.dlq` | 死信队列 |
 
-配置项（`application.yml`）：
+配置：
 
-- `app.mq.enabled`：是否启用 MQ（默认 `true`，设为 `false` 则同步处理）
-- `spring.rabbitmq.*`：连接地址与账号（见 `application-dev.yml`）
+- `app.mq.enabled`：默认 `true`；`false` 时同步处理
+- `spring.rabbitmq.*`：见 `application-dev.yml`
 
 ## 测试与数据脚本
 
-本地联调、清空订单、重置库存、Flyway 修复等，见 **[docs/testing.md](../docs/testing.md)**。
+本地清数据、重置库存、Flyway 修复等见 **[docs/testing.md](../docs/testing.md)**。
+
+## 前端联调
+
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev:mp-weixin
+```
+
+微信开发者工具打开 `frontend/dist/dev/mp-weixin`。真机调试在登录页配置局域网后端 IP。

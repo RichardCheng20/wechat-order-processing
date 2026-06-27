@@ -2,7 +2,7 @@
 
 本文档汇总 `backend/scripts/` 下的测试/运维脚本及常用命令，便于本地联调时快速重置数据或修复环境。
 
-相关文档：[订单状态流转](./order_status.md) · [后端启动说明](../backend/README.md)
+相关文档：[订单状态流转](./order_status.md) · [客户入驻三种码](./customer-onboarding.md) · [后端启动说明](../backend/README.md)
 
 ---
 

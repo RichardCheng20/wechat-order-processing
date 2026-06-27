@@ -1,5 +1,7 @@
 # 订单状态流转
 
+> 产品上下文见 [PRD v1.0 §9](./vegetable-wholesale-miniapp-prd.md#9-订单状态与流转)。
+
 ## 业务状态（对外展示）
 
 | 顺序 | 状态 | 说明 |
@@ -66,7 +68,7 @@ flowchart LR
 
 ## 详情页进度条（6 步）
 
-与 `frontend/src/utils/order-flow.ts` 一致，固定六格：
+与 `frontend/src/shared/utils/order-flow.ts` 一致，固定六格：
 
 **待确认 → 已确认 → 已拣单 → 已录价 → 已对账 → 已收款**
 
