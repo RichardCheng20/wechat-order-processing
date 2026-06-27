@@ -9,9 +9,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -31,6 +38,13 @@ public class WechatClient {
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient = RestClient.create();
+    private final RestTemplate restTemplate = createBufferedRestTemplate();
+
+    private static RestTemplate createBufferedRestTemplate() {
+        RestTemplate template = new RestTemplate();
+        template.setRequestFactory(new BufferingClientHttpRequestFactory(template.getRequestFactory()));
+        return template;
+    }
 
     private String cachedAccessToken;
     private long accessTokenExpireAtMs;
@@ -136,9 +150,7 @@ public class WechatClient {
             throw BusinessException.of(400, "二维码场景参数无效");
         }
         AppProperties.Wechat wechat = appProperties.getWechat();
-        if (!StringUtils.hasText(wechat.getAppSecret())
-                || wechat.getAppSecret().contains("在此填入")
-                || wechat.getAppSecret().contains("AppSecret")) {
+        if (!StringUtils.hasText(wechat.getAppSecret()) || wechat.getAppSecret().contains("在此填入")) {
             throw BusinessException.of(400, "未配置有效的微信小程序 AppSecret，请在 application-dev-local.yml 填入真实密钥");
         }
         String accessToken = getAccessToken();
@@ -147,33 +159,45 @@ public class WechatClient {
         payload.put("scene", scene);
         payload.put("check_path", false);
         payload.put("width", 430);
-        payload.put("auto_color", true);
         if (StringUtils.hasText(wechat.getEnvVersion())) {
             payload.put("env_version", wechat.getEnvVersion().trim());
         }
-        byte[] body = restClient.post()
-                .uri(WXACODE_UNLIMIT_URL, accessToken)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(byte[].class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.ALL));
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+        byte[] body;
+        try {
+            ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                    WXACODE_UNLIMIT_URL.replace("{accessToken}", accessToken),
+                    entity,
+                    byte[].class);
+            body = response.getBody();
+        } catch (RestClientException ex) {
+            log.warn("create wxacode request failed", ex);
+            throw BusinessException.of(400, "请求微信太阳码接口失败：" + ex.getMessage());
+        }
+        return parseWxacodeBody(body);
+    }
+
+    private byte[] parseWxacodeBody(byte[] body) {
         if (body == null || body.length == 0) {
-            return null;
+            throw BusinessException.of(400, "微信太阳码响应为空，请检查 AppID/AppSecret 与 env-version 配置");
         }
-        if (body[0] == '{') {
-            try {
-                JsonNode node = objectMapper.readTree(body);
-                int errCode = node.path("errcode").asInt(0);
-                if (errCode != 0) {
-                    String errMsg = node.path("errmsg").asText("生成失败");
-                    log.warn("create wxacode failed: {} ({})", errMsg, errCode);
-                    throw BusinessException.of(400, "微信太阳码生成失败：" + errMsg + " (" + errCode + ")");
-                }
-            } catch (Exception ex) {
-                log.warn("create wxacode parse failed", ex);
-                return null;
-            }
+        if (body[0] != '{') {
+            return body;
         }
-        return body;
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            int errCode = node.path("errcode").asInt(0);
+            String errMsg = node.path("errmsg").asText("未知错误");
+            log.warn("create wxacode failed: {} ({})", errMsg, errCode);
+            throw BusinessException.of(400, "微信太阳码生成失败：" + errMsg + " (" + errCode + ")");
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("create wxacode parse failed", ex);
+            throw BusinessException.of(400, "微信太阳码响应解析失败");
+        }
     }
 }

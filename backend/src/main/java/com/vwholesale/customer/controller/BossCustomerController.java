@@ -69,6 +69,12 @@ public class BossCustomerController {
         return ApiResponse.ok(null);
     }
 
+    @Operation(summary = "解绑客户微信")
+    @PostMapping("/customers/{id}/unbind")
+    public ApiResponse<CustomerVO> unbind(@PathVariable Long id) {
+        return ApiResponse.ok(customerService.unbindWechat(id));
+    }
+
     @Operation(summary = "生成邀请码")
     @PostMapping("/customers/{id}/invite")
     public ApiResponse<InviteCodeVO> invite(@PathVariable Long id) {

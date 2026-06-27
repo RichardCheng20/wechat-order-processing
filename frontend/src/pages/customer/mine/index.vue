@@ -10,7 +10,7 @@
 
     <view class="menu-card">
       <view v-if="!userStore.customerId" class="menu-item" @tap="goBind">
-        <text class="menu-label">绑定客户档案</text>
+        <text class="menu-label">成为 VIP 客户</text>
         <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" @tap="goOrders">
@@ -67,6 +67,8 @@ onShow(async () => {
     bound.value = status.bound
     if (status.bound && status.customerId) {
       userStore.applyCustomerBind(status.customerId, status.customerName)
+    } else if (userStore.customerId) {
+      userStore.clearCustomerBind()
     }
   } catch {
     // ignore

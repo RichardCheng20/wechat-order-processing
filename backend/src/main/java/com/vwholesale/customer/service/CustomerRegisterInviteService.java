@@ -122,7 +122,8 @@ public class CustomerRegisterInviteService {
             qrErrorHint = ex.getMessage();
             log.warn("create register wxacode failed: {}", ex.getMessage());
         } catch (Exception ex) {
-            qrErrorHint = "生成太阳码失败，请检查微信配置";
+            String message = ex.getMessage();
+            qrErrorHint = StringUtils.hasText(message) ? message : "生成太阳码失败，请检查微信配置";
             log.warn("create register wxacode failed", ex);
         }
         String miniProgramName = appProperties.getWechat().getMiniProgramName();

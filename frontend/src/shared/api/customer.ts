@@ -28,7 +28,7 @@ export interface InviteCodeResult {
   customerId: number
   customerName: string
   inviteCode: string
-  inviteExpiredAt: string
+  inviteExpiredAt?: string | null
 }
 
 export interface CustomerRegisterInviteResult {
@@ -124,6 +124,13 @@ export function deleteBossCustomer(id: number) {
   return request<void>({
     url: `/api/boss/customers/${id}`,
     method: 'DELETE',
+  })
+}
+
+export function unbindBossCustomerWechat(id: number) {
+  return request<CustomerItem>({
+    url: `/api/boss/customers/${id}/unbind`,
+    method: 'POST',
   })
 }
 

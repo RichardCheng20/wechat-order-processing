@@ -240,6 +240,18 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    clearCustomerBind() {
+      this.customerId = null
+      this.customerName = ''
+      const raw = uni.getStorageSync(PROFILE_KEY)
+      if (raw) {
+        const data = JSON.parse(raw as string) as LoginResult & { customerName?: string }
+        data.customerId = undefined
+        data.customerName = undefined
+        uni.setStorageSync(PROFILE_KEY, JSON.stringify(data))
+      }
+    },
+
     async resolveCustomerHome(): Promise<string> {
       if (this.customerId) {
         return '/pages/customer/home/index'

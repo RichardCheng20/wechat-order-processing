@@ -21,3 +21,19 @@ export function updateBossProfile(data: BossProfile) {
     data,
   })
 }
+
+export interface StallOrderQrResult {
+  merchantId: number
+  merchantName?: string
+  loginPath: string
+  miniProgramName?: string
+  qrCodeBase64?: string | null
+  qrErrorHint?: string | null
+}
+
+export function fetchStallOrderQrcode() {
+  return request<StallOrderQrResult>({
+    url: '/api/boss/merchant/order-qrcode',
+    method: 'GET',
+  })
+}

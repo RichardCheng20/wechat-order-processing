@@ -7,6 +7,24 @@ function needsDataPlatformPassword(url: string) {
 }
 
 let authRedirectPending = false
+let staleCustomerRedirectPending = false
+
+function handleStaleCustomerProfile(message: string) {
+  const userStore = useUserStore()
+  if (!userStore.isCustomer) return false
+  if (!message.includes('客户档案不存在') && !message.includes('客户不存在')) {
+    return false
+  }
+  if (staleCustomerRedirectPending) return true
+  staleCustomerRedirectPending = true
+  userStore.clearCustomerBind()
+  uni.showToast({ title: '客户档案已失效，请重新绑定', icon: 'none', duration: 2500 })
+  setTimeout(() => {
+    staleCustomerRedirectPending = false
+    uni.navigateTo({ url: '/pages/customer/bind/index' })
+  }, 800)
+  return true
+}
 
 function handleUnauthorized() {
   if (authRedirectPending) return
@@ -86,7 +104,12 @@ function doRequest<T>(options: UniApp.RequestOptions): Promise<T> {
           resolve(body.data as T)
           return
         }
-        reject(new Error(body?.message || '请求失败'))
+        const message = body?.message || '请求失败'
+        if (handleStaleCustomerProfile(message)) {
+          reject(new Error(message))
+          return
+        }
+        reject(new Error(message))
       },
       fail: (err) => {
         reject(normalizeFailError(err))

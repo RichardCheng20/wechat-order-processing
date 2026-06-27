@@ -52,7 +52,7 @@
         {
           "path": "bind/index",
           "style": {
-            "navigationBarTitleText": "绑定客户"
+            "navigationBarTitleText": "成为 VIP 客户"
           }
         },
         {
@@ -225,6 +225,12 @@
           "path": "mine/index",
           "style": {
             "navigationBarTitleText": "我的"
+          }
+        },
+        {
+          "path": "stall-qrcode/index",
+          "style": {
+            "navigationBarTitleText": "档口下单码"
           }
         },
         {

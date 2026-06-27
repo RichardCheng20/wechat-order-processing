@@ -1,5 +1,6 @@
 package com.vwholesale.customer.service;
 
+import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.vwholesale.common.config.AppProperties;
@@ -146,15 +147,19 @@ public class CustomerService {
         if (orderCount != null && orderCount > 0) {
             throw BusinessException.of(400, "该客户已有订单记录，无法删除");
         }
-        if (customer.getBindUserId() != null) {
-            User user = userMapper.selectById(customer.getBindUserId());
-            if (user != null && id.equals(user.getCustomerId())) {
-                user.setCustomerId(null);
-                user.setStatus("PENDING_BIND");
-                userMapper.updateById(user);
-            }
-        }
+        unbindWechatForCustomer(customer, false);
         customerMapper.deleteById(id);
+    }
+
+    @Transactional
+    public CustomerVO unbindWechat(Long id) {
+        RoleChecker.requireBoss();
+        Customer customer = getCustomerOrThrow(id);
+        if (!hasBoundWechatUser(customer)) {
+            throw BusinessException.of(400, "客户未绑定微信");
+        }
+        unbindWechatForCustomer(customer, true);
+        return toVO(customerMapper.selectById(id), null);
     }
 
     @Transactional
@@ -162,13 +167,29 @@ public class CustomerService {
         RoleChecker.requireBoss();
         Customer customer = getCustomerOrThrow(id);
         if ("BOUND".equals(customer.getBindStatus()) && customer.getBindUserId() != null) {
-            throw BusinessException.of(400, "客户已绑定微信，无需重新生成邀请码");
+            throw BusinessException.of(400, "客户已绑定微信，无需生成 VIP 专属码");
+        }
+
+        if (StringUtils.hasText(customer.getInviteCode())) {
+            boolean expired = customer.getInviteExpiredAt() != null
+                    && customer.getInviteExpiredAt().isBefore(LocalDateTime.now());
+            if (!expired) {
+                if (!"INVITED".equals(customer.getBindStatus())) {
+                    customer.setBindStatus("INVITED");
+                    customerMapper.updateById(customer);
+                }
+                return InviteCodeVO.builder()
+                        .customerId(customer.getId())
+                        .customerName(customer.getName())
+                        .inviteCode(customer.getInviteCode())
+                        .inviteExpiredAt(customer.getInviteExpiredAt())
+                        .build();
+            }
         }
 
         String code = generateUniqueInviteCode();
-        int expireDays = appProperties.getCustomer().getInviteCodeExpireDays();
         customer.setInviteCode(code);
-        customer.setInviteExpiredAt(LocalDateTime.now().plusDays(expireDays));
+        customer.setInviteExpiredAt(null);
         customer.setBindStatus("INVITED");
         customerMapper.updateById(customer);
 
@@ -301,26 +322,91 @@ public class CustomerService {
 
     public Map<String, Object> bindStatus() {
         RoleChecker.requireCustomer();
-        Long customerId = RoleChecker.currentCustomerId();
-        if (customerId == null) {
-            User user = userMapper.selectById(RoleChecker.currentUserId());
-            if (user != null && user.getCustomerId() != null) {
-                customerId = user.getCustomerId();
-            }
-        }
+        User user = userMapper.selectById(RoleChecker.currentUserId());
+        Long customerId = user != null ? user.getCustomerId() : null;
         Map<String, Object> result = new java.util.HashMap<>();
-        result.put("bound", customerId != null);
-        result.put("customerId", customerId != null ? customerId : 0);
         if (customerId != null) {
             Customer customer = customerMapper.selectById(customerId);
-            if (customer != null) {
+            if (customer == null) {
+                unbindWechatUser(user);
+                customerId = null;
+            } else {
                 result.put("customerName", customer.getName());
                 if (StringUtils.hasText(customer.getCustomerNo())) {
                     result.put("customerNo", customer.getCustomerNo());
                 }
+                syncCustomerSession(user.getId(), customerId);
+            }
+        } else if (user != null) {
+            clearCustomerSession(user.getId());
+            if (StpUtil.isLogin() && StpUtil.getLoginIdAsLong() == user.getId()) {
+                StpUtil.getSession().delete("customerId");
             }
         }
+        result.put("bound", customerId != null);
+        result.put("customerId", customerId != null ? customerId : 0);
         return result;
+    }
+
+    private boolean hasBoundWechatUser(Customer customer) {
+        if ("BOUND".equals(customer.getBindStatus()) && customer.getBindUserId() != null) {
+            return true;
+        }
+        Long count = userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getCustomerId, customer.getId()));
+        return count != null && count > 0;
+    }
+
+    private void unbindWechatForCustomer(Customer customer, boolean keepCustomerRecord) {
+        List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
+                .eq(User::getCustomerId, customer.getId()));
+        for (User user : users) {
+            unbindWechatUser(user);
+        }
+        if (keepCustomerRecord) {
+            customer.setBindUserId(null);
+            customer.setBindStatus("NOT_INVITED");
+            customer.setInviteCode(null);
+            customer.setInviteExpiredAt(null);
+            customerMapper.updateById(customer);
+        }
+    }
+
+    private void unbindWechatUser(User user) {
+        if (user == null) {
+            return;
+        }
+        user.setCustomerId(null);
+        user.setStatus("PENDING_BIND");
+        userMapper.updateById(user);
+        clearCustomerSession(user.getId());
+    }
+
+    private void syncCustomerSession(Long userId, Long customerId) {
+        if (userId == null || customerId == null) {
+            return;
+        }
+        try {
+            if (StpUtil.isLogin(userId)) {
+                StpUtil.getSessionByLoginId(userId).set("customerId", customerId);
+            }
+        } catch (Exception ignored) {
+            // ignore offline users
+        }
+    }
+
+    private void clearCustomerSession(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        try {
+            SaSession session = StpUtil.getSessionByLoginId(userId, false);
+            if (session != null) {
+                session.delete("customerId");
+            }
+        } catch (Exception ignored) {
+            // ignore offline users
+        }
     }
 
     private Customer getCustomerOrThrow(Long id) {

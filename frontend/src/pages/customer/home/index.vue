@@ -7,7 +7,7 @@
         </view>
         <text v-if="userStore.customerId" class="hint">欢迎您选品下单，祝生意兴隆！</text>
         <text v-else class="hint">临时下单：购物车中填写店铺名称后提交</text>
-        <text v-if="!userStore.customerId" class="bind-link" @tap="goBind">已有邀请码？去绑定客户档案</text>
+        <text v-if="!userStore.customerId" class="bind-link" @tap="goBind">已有 VIP 专属码？去绑定</text>
       </view>
 
       <view class="search-box">

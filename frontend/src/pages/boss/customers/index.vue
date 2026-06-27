@@ -31,10 +31,10 @@
       </view>
 
       <view class="action-row">
-        <view class="action-chip primary" @tap="openRegisterInvite">邀请客户注册</view>
-        <view class="action-chip" @tap="goPending">
+        <view class="action-chip primary" @tap="goPending">
           待审核<text v-if="pendingCount > 0" class="badge">{{ pendingCount }}</text>
         </view>
+        <view class="action-chip secondary" @tap="openRegisterInvite">邀请注册</view>
       </view>
 
       <view v-if="tab === 'unsettled' && !loading" class="summary-bar">
@@ -80,7 +80,7 @@
               class="invite-btn"
               :class="{ bound: item.bindStatus === 'BOUND' }"
               @tap.stop="handleInvite(item)"
-            >{{ item.bindStatus === 'BOUND' ? '已绑定' : '邀请下单' }}</view>
+            >{{ item.bindStatus === 'BOUND' ? '已绑定' : 'VIP专属码' }}</view>
             <text class="order-date">下单: {{ formatOrderDate(item.lastOrderAt) }}</text>
           </view>
         </view>
@@ -110,12 +110,13 @@
 
     <u-popup :show="!!inviteInfo" mode="center" round="16" @close="inviteInfo = null">
       <view v-if="inviteInfo" class="invite-popup">
-        <text class="invite-title">邀请码已生成</text>
+        <text class="invite-title">VIP 专属码</text>
         <text class="invite-name">{{ inviteInfo.customerName }}</text>
         <text class="invite-code">{{ inviteInfo.inviteCode }}</text>
-        <text class="invite-expire">有效期至 {{ formatTime(inviteInfo.inviteExpiredAt) }}</text>
-        <text class="invite-tip">请将此邀请码发给客户，在小程序绑定页输入</text>
-        <u-button type="primary" text="复制邀请码" @click="copyInviteCode" />
+        <text v-if="inviteInfo.inviteExpiredAt" class="invite-expire">有效期至 {{ formatTime(inviteInfo.inviteExpiredAt) }}</text>
+        <text v-else class="invite-expire">绑定前长期有效，绑定后自动作废</text>
+        <text class="invite-tip">请将此码发给合作客户，在小程序「成为 VIP 客户」页输入</text>
+        <u-button type="primary" text="复制专属码" @click="copyInviteCode" />
       </view>
     </u-popup>
 
@@ -344,9 +345,12 @@ async function handleInvite(item: CustomerItem) {
 }
 
 function handleDelete(item: CustomerItem) {
+  const bindTip = item.bindStatus === 'BOUND'
+    ? '将同时解绑该客户微信，对方需重新绑定或注册后才能下单。'
+    : ''
   uni.showModal({
     title: '确认删除',
-    content: `确定删除「${item.name}」？删除后不可恢复。`,
+    content: `确定删除「${item.name}」？删除后不可恢复。${bindTip}`,
     confirmColor: '#e74c3c',
     success: async (res) => {
       if (!res.confirm) return
@@ -563,6 +567,12 @@ function formatTime(value: string) {
   color: #07c160;
   background: #e8f8ef;
   font-weight: 600;
+}
+
+.action-chip.secondary {
+  color: #66736b;
+  background: #f5f7f3;
+  border: 1rpx solid #dce6df;
 }
 
 .badge {

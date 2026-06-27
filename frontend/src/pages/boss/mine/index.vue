@@ -44,6 +44,10 @@
           <AppIcon class="grid-icon" name="inventory" tone="blue" :size="28" :tile-size="88" :radius="22" />
           <text class="grid-label">库存管理</text>
         </view>
+        <view class="grid-item" @tap="goStallQrcode">
+          <AppIcon class="grid-icon" name="scan" tone="green" :size="28" :tile-size="88" :radius="22" />
+          <text class="grid-label">档口下单码</text>
+        </view>
       </view>
     </view>
 
@@ -172,6 +176,10 @@ function goQuotes() {
 
 function goInventory() {
   uni.navigateTo({ url: '/pages/boss/inventory/index' })
+}
+
+function goStallQrcode() {
+  uni.navigateTo({ url: '/pages/boss/stall-qrcode/index' })
 }
 
 function showComingSoon(name: string) {

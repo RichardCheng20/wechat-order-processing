@@ -1,14 +1,14 @@
 <template>
   <view class="page">
     <view class="header">
-      <text class="title">绑定客户档案</text>
-      <text class="subtitle">请输入老板提供的邀请码，完成绑定后即可下单</text>
+      <text class="title">成为 VIP 客户</text>
+      <text class="subtitle">请输入老板提供的 VIP 专属码，绑定档案后可享受专属价格与订单记录</text>
     </view>
 
     <view class="card">
       <u-input
         v-model="inviteCode"
-        placeholder="请输入8位邀请码"
+        placeholder="请输入8位 VIP 专属码"
         maxlength="8"
         :custom-style="{ fontSize: '36rpx', letterSpacing: '4rpx' }"
       />
@@ -22,7 +22,7 @@
     </view>
 
     <view class="tip">
-      <text>邀请码默认 7 天有效，过期请联系老板重新生成</text>
+      <text>VIP 专属码绑定前长期有效；绑定成功后该码自动作废</text>
     </view>
 
     <view class="skip" @tap="goShop">暂不绑定，直接选购下单</view>

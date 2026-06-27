@@ -57,6 +57,14 @@
           <text class="setting-label">绑定状态</text>
           <text class="setting-value">{{ customer.bindStatus === 'BOUND' ? '已绑定微信' : '未绑定' }}</text>
         </view>
+        <view
+          v-if="customer.bindStatus === 'BOUND'"
+          class="setting-row action-row"
+          @tap="handleUnbind"
+        >
+          <text class="setting-label unbind-label">解绑微信</text>
+          <text class="menu-arrow">›</text>
+        </view>
         <view class="setting-row">
           <text class="setting-label">自动确认订单</text>
           <text class="setting-value">{{ customer.autoConfirmOrder ? '是' : '否' }}</text>
@@ -106,6 +114,7 @@ import { reactive, ref } from 'vue'
 import {
   deleteBossCustomer,
   fetchBossCustomerDetail,
+  unbindBossCustomerWechat,
   updateBossCustomer,
   type CustomerItem,
 } from '@common/api/customer'
@@ -217,11 +226,32 @@ function goSalesOrder() {
   uni.navigateTo({ url: '/pages/boss/sales-order/index' })
 }
 
-function handleDelete() {
+function handleUnbind() {
   if (!customer.value) return
   uni.showModal({
+    title: '解绑微信',
+    content: `确定解绑「${customer.value.name}」的微信？解绑后对方需重新绑定或扫码注册才能下单。`,
+    confirmColor: '#e67e22',
+    success: async (res) => {
+      if (!res.confirm || !customer.value) return
+      try {
+        customer.value = await unbindBossCustomerWechat(customer.value.id)
+        uni.showToast({ title: '已解绑', icon: 'success' })
+      } catch (err) {
+        uni.showToast({ title: err instanceof Error ? err.message : '解绑失败', icon: 'none' })
+      }
+    },
+  })
+}
+
+function handleDelete() {
+  if (!customer.value) return
+  const bindTip = customer.value.bindStatus === 'BOUND'
+    ? '将同时解绑该客户微信，对方需重新绑定或注册后才能下单。'
+    : ''
+  uni.showModal({
     title: '确认删除',
-    content: `确定删除「${customer.value.name}」？删除后不可恢复。`,
+    content: `确定删除「${customer.value.name}」？删除后不可恢复。${bindTip}`,
     confirmColor: '#e74c3c',
     success: async (res) => {
       if (!res.confirm || !customer.value) return
@@ -372,6 +402,14 @@ async function submitEdit() {
   text-align: right;
   font-size: 28rpx;
   color: #333;
+}
+
+.action-row {
+  cursor: pointer;
+}
+
+.unbind-label {
+  color: #e67e22;
 }
 
 .bottom-bar {
