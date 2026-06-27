@@ -37,6 +37,7 @@ export interface CustomerRegisterInviteResult {
   loginPath: string
   miniProgramName?: string
   qrCodeBase64?: string | null
+  qrErrorHint?: string | null
 }
 
 export interface CustomerBindRequestItem {

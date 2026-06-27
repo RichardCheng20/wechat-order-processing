@@ -135,8 +135,13 @@ public class WechatClient {
         if (!StringUtils.hasText(scene) || scene.length() > 32) {
             throw BusinessException.of(400, "二维码场景参数无效");
         }
-        String accessToken = getAccessToken();
         AppProperties.Wechat wechat = appProperties.getWechat();
+        if (!StringUtils.hasText(wechat.getAppSecret())
+                || wechat.getAppSecret().contains("在此填入")
+                || wechat.getAppSecret().contains("AppSecret")) {
+            throw BusinessException.of(400, "未配置有效的微信小程序 AppSecret，请在 application-dev-local.yml 填入真实密钥");
+        }
+        String accessToken = getAccessToken();
         Map<String, Object> payload = new HashMap<>();
         payload.put("page", "pages/launch/index");
         payload.put("scene", scene);
@@ -160,8 +165,9 @@ public class WechatClient {
                 JsonNode node = objectMapper.readTree(body);
                 int errCode = node.path("errcode").asInt(0);
                 if (errCode != 0) {
-                    log.warn("create wxacode failed: {}", node.path("errmsg").asText());
-                    return null;
+                    String errMsg = node.path("errmsg").asText("生成失败");
+                    log.warn("create wxacode failed: {} ({})", errMsg, errCode);
+                    throw BusinessException.of(400, "微信太阳码生成失败：" + errMsg + " (" + errCode + ")");
                 }
             } catch (Exception ex) {
                 log.warn("create wxacode parse failed", ex);

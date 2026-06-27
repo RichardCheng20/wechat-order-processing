@@ -140,7 +140,7 @@
           />
           <view v-else class="qr-placeholder">
             <text class="qr-placeholder-title">小程序码暂未生成</text>
-            <text class="qr-placeholder-tip">请确认服务器已配置微信 AppSecret；本地联调可在 application-dev-local.yml 设置 env-version: develop</text>
+            <text class="qr-placeholder-tip">{{ registerInvite.qrErrorHint || '请确认服务器已配置微信 AppSecret；本地联调请在 application-dev-local.yml 设置 env-version: develop' }}</text>
             <u-button size="small" type="primary" text="重新生成" :loading="registerGenerating" @click="generateRegisterInvite" />
           </view>
         </view>

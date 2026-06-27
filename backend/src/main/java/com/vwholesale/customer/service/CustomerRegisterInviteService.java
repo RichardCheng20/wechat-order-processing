@@ -12,6 +12,7 @@ import com.vwholesale.customer.mapper.MerchantCustomerRegisterTokenMapper;
 import com.vwholesale.merchant.entity.Merchant;
 import com.vwholesale.merchant.mapper.MerchantMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,6 +24,7 @@ import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CustomerRegisterInviteService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -108,13 +110,20 @@ public class CustomerRegisterInviteService {
     private CustomerRegisterInviteVO toVO(MerchantCustomerRegisterToken row) {
         String loginPath = "pages/launch/index?m=" + row.getMerchantId() + "&r=" + row.getToken();
         String qrCodeBase64 = null;
+        String qrErrorHint = null;
         try {
             byte[] png = wechatClient.createLaunchQrCode("m=" + row.getMerchantId() + ",r=" + row.getToken());
             if (png != null && png.length > 0) {
                 qrCodeBase64 = Base64.getEncoder().encodeToString(png);
+            } else {
+                qrErrorHint = "微信未返回太阳码图片，请检查 AppID/AppSecret 与 env-version 配置";
             }
-        } catch (Exception ignored) {
-            // 未配置微信或生成失败时仅返回邀请码
+        } catch (BusinessException ex) {
+            qrErrorHint = ex.getMessage();
+            log.warn("create register wxacode failed: {}", ex.getMessage());
+        } catch (Exception ex) {
+            qrErrorHint = "生成太阳码失败，请检查微信配置";
+            log.warn("create register wxacode failed", ex);
         }
         String miniProgramName = appProperties.getWechat().getMiniProgramName();
         if (!StringUtils.hasText(miniProgramName)) {
@@ -126,6 +135,7 @@ public class CustomerRegisterInviteService {
                 .loginPath(loginPath)
                 .miniProgramName(miniProgramName.trim())
                 .qrCodeBase64(qrCodeBase64)
+                .qrErrorHint(qrErrorHint)
                 .build();
     }
 

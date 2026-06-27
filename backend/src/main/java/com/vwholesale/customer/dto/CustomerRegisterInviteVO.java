@@ -17,4 +17,6 @@ public class CustomerRegisterInviteVO {
     private String miniProgramName;
     /** 微信太阳码 Base64（未配置 AppSecret 或生成失败时为 null） */
     private String qrCodeBase64;
+    /** 太阳码未生成时的原因（便于联调排查） */
+    private String qrErrorHint;
 }
