@@ -43,6 +43,10 @@ public class AppProperties {
     public static class Wechat {
         private String appId;
         private String appSecret;
+        /** 展示在邀请二维码上的小程序名称 */
+        private String miniProgramName = "蔬菜批发";
+        /** 太阳码打开版本：release / trial / develop（未发正式版联调时用 develop） */
+        private String envVersion = "release";
         /** 客户提醒老板：订阅消息模板 ID，需与微信公众平台模板字段 thing1/character_string2/thing3/time4 对应 */
         private String orderNotifyTemplateId;
     }

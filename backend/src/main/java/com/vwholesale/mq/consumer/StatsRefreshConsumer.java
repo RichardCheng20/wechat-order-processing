@@ -1,5 +1,6 @@
 package com.vwholesale.mq.consumer;
 
+import com.vwholesale.common.context.MerchantContextHolder;
 import com.vwholesale.mq.config.RabbitMqConstants;
 import com.vwholesale.mq.model.OrderEventMessage;
 import com.vwholesale.mq.service.BossStatsCacheService;
@@ -23,6 +24,13 @@ public class StatsRefreshConsumer {
             return;
         }
         log.debug("refresh stats cache for event {}", message.getEventType());
-        bossStatsCacheService.refresh();
+        try {
+            if (message.getMerchantId() != null) {
+                MerchantContextHolder.set(message.getMerchantId());
+            }
+            bossStatsCacheService.refresh();
+        } finally {
+            MerchantContextHolder.clear();
+        }
     }
 }

@@ -110,8 +110,8 @@ https://api.52laicai.cn/api/files/m1/statements/xxx.png?exp=1719234567&sign=...
 
 ## 相关文档
 
-- [腾讯云上线分步指南](./tencent-cloud-deployment-walkthrough.md)
-- [腾讯云上云部署指南](./tencent-cloud-deployment.md) — COS 规划
+- [腾讯云上线分步指南](./腾讯云上线分步操作指南.md)
+- [腾讯云上云部署指南](./腾讯云上云部署指南.md) — COS 规划
 
 ---
 

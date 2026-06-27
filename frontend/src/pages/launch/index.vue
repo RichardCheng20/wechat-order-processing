@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { onLoad } from '@dcloudio/uni-app'
+import { applyEntryQuery } from '@common/utils/tenant'
 
 function homeByRole(role: string): string {
   switch (role) {
@@ -18,24 +19,8 @@ function homeByRole(role: string): string {
   }
 }
 
-function captureLaunchEntry(query?: Record<string, string | undefined>) {
-  if (!query) return
-  if (query.m) {
-    const id = Number(query.m)
-    if (!Number.isNaN(id) && id > 0) {
-      uni.setStorageSync('entry_merchant_id', id)
-    }
-  }
-  if (query.act) {
-    uni.setStorageSync('entry_activation_token', String(query.act).trim())
-  }
-  if (query.code) {
-    uni.setStorageSync('entry_invite_code', String(query.code).trim().toUpperCase())
-  }
-}
-
 onLoad((query) => {
-  captureLaunchEntry(query as Record<string, string | undefined>)
+  applyEntryQuery(query as Record<string, string | undefined>)
   const jump = () => {
     try {
       const token = uni.getStorageSync('token')

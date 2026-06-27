@@ -30,6 +30,13 @@
         >未结清</view>
       </view>
 
+      <view class="action-row">
+        <view class="action-chip primary" @tap="openRegisterInvite">邀请客户注册</view>
+        <view class="action-chip" @tap="goPending">
+          待审核<text v-if="pendingCount > 0" class="badge">{{ pendingCount }}</text>
+        </view>
+      </view>
+
       <view v-if="tab === 'unsettled' && !loading" class="summary-bar">
         <text>共 {{ unsettledCount }} 位，共欠款：￥{{ formatMoney(totalUnsettled) }}</text>
       </view>
@@ -111,6 +118,56 @@
         <u-button type="primary" text="复制邀请码" @click="copyInviteCode" />
       </view>
     </u-popup>
+
+    <u-popup :show="!!registerInvite" mode="center" round="16" @close="registerInvite = null">
+      <view v-if="registerInvite" class="invite-popup register-popup">
+        <view class="mp-brand">
+          <view class="mp-logo">菜</view>
+          <text class="mp-name">{{ registerInvite.miniProgramName || '蔬菜批发' }}</text>
+          <text class="mp-tag">微信小程序</text>
+        </view>
+        <text class="register-subtitle">
+          {{ userStore.merchantName ? `${userStore.merchantName} 邀请客户注册` : '客户扫码打开小程序，填写资料后等待审核' }}
+        </text>
+
+        <view class="qr-frame">
+          <image
+            v-if="registerQrSrc"
+            class="qr-image"
+            :src="registerQrSrc"
+            mode="aspectFit"
+            show-menu-by-longpress
+          />
+          <view v-else class="qr-placeholder">
+            <text class="qr-placeholder-title">小程序码暂未生成</text>
+            <text class="qr-placeholder-tip">请确认服务器已配置微信 AppSecret；本地联调可在 application-dev-local.yml 设置 env-version: develop</text>
+            <u-button size="small" type="primary" text="重新生成" :loading="registerGenerating" @click="generateRegisterInvite" />
+          </view>
+        </view>
+
+        <text v-if="registerQrSrc" class="scan-hint">微信扫一扫 · 打开小程序申请成为客户</text>
+        <text class="scan-hint secondary">长按二维码可保存或转发给客户</text>
+        <text class="invite-expire">邀请有效期至 {{ formatTime(registerInvite.expiredAt) }}</text>
+
+        <view class="popup-actions">
+          <u-button
+            v-if="registerQrSrc"
+            type="primary"
+            text="保存二维码到相册"
+            @click="saveRegisterQr"
+          />
+          <u-button text="重新生成" :loading="registerGenerating" @click="generateRegisterInvite" />
+        </view>
+
+        <view class="code-toggle" @tap="showRegisterCode = !showRegisterCode">
+          <text>备用：复制邀请码 {{ showRegisterCode ? '▲' : '▼' }}</text>
+        </view>
+        <view v-if="showRegisterCode" class="code-backup">
+          <text class="invite-code small">{{ registerInvite.token }}</text>
+          <u-button size="small" text="复制邀请码" @click="copyRegisterToken" />
+        </view>
+      </view>
+    </u-popup>
   </view>
 </template>
 
@@ -121,8 +178,12 @@ import {
   createBossCustomer,
   deleteBossCustomer,
   fetchBossCustomers,
+  fetchCurrentCustomerRegisterInvite,
+  fetchPendingBindRequestCount,
   generateCustomerInvite,
+  generateCustomerRegisterInvite,
   type CustomerItem,
+  type CustomerRegisterInviteResult,
   type InviteCodeResult,
 } from '@common/api/customer'
 import AppIcon from '@/components/AppIcon.vue'
@@ -136,6 +197,15 @@ const loading = ref(false)
 const saving = ref(false)
 const showCreate = ref(false)
 const inviteInfo = ref<InviteCodeResult | null>(null)
+const registerInvite = ref<CustomerRegisterInviteResult | null>(null)
+const registerGenerating = ref(false)
+const showRegisterCode = ref(false)
+const pendingCount = ref(0)
+const registerQrSrc = computed(() =>
+  registerInvite.value?.qrCodeBase64
+    ? `data:image/png;base64,${registerInvite.value.qrCodeBase64}`
+    : '',
+)
 const form = reactive({
   name: '',
   contactName: '',
@@ -180,8 +250,17 @@ onShow(async () => {
     uni.reLaunch({ url: '/pages/login/index' })
     return
   }
-  await loadData()
+  await Promise.all([loadData(), loadPendingCount()])
 })
+
+async function loadPendingCount() {
+  try {
+    const res = await fetchPendingBindRequestCount()
+    pendingCount.value = res?.count || 0
+  } catch {
+    pendingCount.value = 0
+  }
+}
 
 async function loadData() {
   loading.value = true
@@ -290,6 +369,71 @@ function copyInviteCode() {
   })
 }
 
+async function openRegisterInvite() {
+  showRegisterCode.value = false
+  try {
+    const current = await fetchCurrentCustomerRegisterInvite()
+    if (current?.token) {
+      registerInvite.value = current
+      return
+    }
+    await generateRegisterInvite()
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '加载失败', icon: 'none' })
+  }
+}
+
+async function generateRegisterInvite() {
+  registerGenerating.value = true
+  try {
+    registerInvite.value = await generateCustomerRegisterInvite()
+    showRegisterCode.value = false
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : '生成失败', icon: 'none' })
+  } finally {
+    registerGenerating.value = false
+  }
+}
+
+function saveRegisterQr() {
+  const base64 = registerInvite.value?.qrCodeBase64
+  if (!base64) {
+    uni.showToast({ title: '暂无二维码', icon: 'none' })
+    return
+  }
+  // #ifdef MP-WEIXIN
+  const filePath = `${wx.env.USER_DATA_PATH}/customer-register-qr.png`
+  wx.getFileSystemManager().writeFile({
+    filePath,
+    data: base64,
+    encoding: 'base64',
+    success: () => {
+      uni.saveImageToPhotosAlbum({
+        filePath,
+        success: () => uni.showToast({ title: '已保存到相册', icon: 'success' }),
+        fail: () => uni.showToast({ title: '保存失败，请长按图片保存', icon: 'none' }),
+      })
+    },
+    fail: () => uni.showToast({ title: '保存失败，请长按图片保存', icon: 'none' }),
+  })
+  // #endif
+  // #ifndef MP-WEIXIN
+  uni.showToast({ title: '请长按图片保存', icon: 'none' })
+  // #endif
+}
+
+function copyRegisterToken() {
+  if (!registerInvite.value) return
+  uni.setClipboardData({
+    data: registerInvite.value.token,
+    success: () => uni.showToast({ title: '已复制邀请码', icon: 'success' }),
+  })
+}
+
+function goPending() {
+  uni.navigateTo({ url: '/pages/boss/customers/pending/index' })
+}
+
 function formatMoney(value?: number) {
   if (value == null || value <= 0) return '0.00'
   return Number(value).toFixed(2)
@@ -380,6 +524,8 @@ function formatTime(value: string) {
 
 .tabs {
   display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
   border-bottom: 1rpx solid #f0f0f0;
 }
 
@@ -395,6 +541,37 @@ function formatTime(value: string) {
 .tab-item.active {
   color: #07c160;
   font-weight: 600;
+}
+
+.action-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.action-chip {
+  flex: 1;
+  padding: 16rpx 20rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #333;
+  background: #fff;
+  border-radius: 12rpx;
+}
+
+.action-chip.primary {
+  color: #07c160;
+  background: #e8f8ef;
+  font-weight: 600;
+}
+
+.badge {
+  margin-left: 6rpx;
+  padding: 0 10rpx;
+  font-size: 22rpx;
+  color: #fff;
+  background: #e74c3c;
+  border-radius: 999rpx;
 }
 
 .tab-item.active::after {
@@ -541,6 +718,121 @@ function formatTime(value: string) {
   text-align: center;
 }
 
+.register-popup {
+  width: 620rpx;
+  padding: 40rpx 36rpx 48rpx;
+}
+
+.mp-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  margin-bottom: 16rpx;
+}
+
+.mp-logo {
+  width: 88rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #07c160, #05a050);
+  color: #fff;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.mp-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.mp-tag {
+  font-size: 22rpx;
+  color: #07c160;
+  padding: 4rpx 16rpx;
+  border: 1rpx solid #b7eb8f;
+  border-radius: 999rpx;
+  background: #f6ffed;
+}
+
+.register-subtitle {
+  display: block;
+  margin-bottom: 24rpx;
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.5;
+}
+
+.qr-frame {
+  padding: 24rpx;
+  background: #fff;
+  border: 1rpx solid #eee;
+  border-radius: 16rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.06);
+}
+
+.qr-image {
+  display: block;
+  width: 420rpx;
+  height: 420rpx;
+  margin: 0 auto;
+}
+
+.qr-placeholder {
+  padding: 48rpx 24rpx;
+  text-align: center;
+}
+
+.qr-placeholder-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #666;
+}
+
+.qr-placeholder-tip {
+  display: block;
+  margin: 16rpx 0 24rpx;
+  font-size: 22rpx;
+  color: #999;
+  line-height: 1.6;
+}
+
+.scan-hint {
+  display: block;
+  margin-top: 20rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.scan-hint.secondary {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  font-weight: 400;
+  color: #999;
+}
+
+.code-toggle {
+  margin-top: 28rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.code-backup {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx dashed #eee;
+}
+
+.invite-code.small {
+  margin: 0 0 16rpx;
+  font-size: 36rpx;
+  letter-spacing: 2rpx;
+}
+
 .invite-title {
   display: block;
   font-size: 32rpx;
@@ -573,5 +865,12 @@ function formatTime(value: string) {
   margin: 24rpx 0;
   font-size: 24rpx;
   color: #666;
+}
+
+.popup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 24rpx;
 }
 </style>

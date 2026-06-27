@@ -1,8 +1,24 @@
 import { getApiBaseUrl, REQUEST_TIMEOUT } from '@common/utils/config'
 import { DATA_PLATFORM_PASSWORD_HEADER, useDataPlatformAccessStore } from '@common/stores/dataPlatformAccess'
+import { useUserStore } from '@common/stores/user'
 
 function needsDataPlatformPassword(url: string) {
   return url.includes('/api/boss/stats/') || url.includes('/api/boss/dashboard')
+}
+
+let authRedirectPending = false
+
+function handleUnauthorized() {
+  if (authRedirectPending) return
+  authRedirectPending = true
+  useUserStore().$reset()
+  uni.removeStorageSync('token')
+  uni.removeStorageSync('user_profile')
+  uni.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+  setTimeout(() => {
+    authRedirectPending = false
+    uni.reLaunch({ url: '/pages/login/index' })
+  }, 600)
 }
 
 export interface ApiResult<T = unknown> {
@@ -51,11 +67,21 @@ function doRequest<T>(options: UniApp.RequestOptions): Promise<T> {
       timeout: REQUEST_TIMEOUT,
       header: headers,
       success: (res) => {
-        if (!res.statusCode || res.statusCode >= 500) {
+        if (!res.statusCode || res.statusCode === 401) {
+          handleUnauthorized()
+          reject(new Error('登录已过期，请重新登录'))
+          return
+        }
+        if (res.statusCode >= 500) {
           reject(new Error('服务器内部错误，请确认后端已启动'))
           return
         }
         const body = res.data as ApiResult<T>
+        if (body && body.code === 401) {
+          handleUnauthorized()
+          reject(new Error(body.message || '登录已过期，请重新登录'))
+          return
+        }
         if (body && body.code === 0) {
           resolve(body.data as T)
           return

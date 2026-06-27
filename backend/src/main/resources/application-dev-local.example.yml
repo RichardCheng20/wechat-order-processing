@@ -5,6 +5,8 @@ app:
   wechat:
     app-id: wxb9af2751957bf934
     app-secret: 在此填入新小程序的AppSecret
+    # 未发正式版、仅开发者工具联调时改为 develop
+    env-version: develop
   admin:
     openid-whitelist:
       - 在此填入你的openid

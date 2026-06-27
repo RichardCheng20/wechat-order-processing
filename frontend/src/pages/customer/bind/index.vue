@@ -34,9 +34,9 @@
 <script setup lang="ts">
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
-import { bindCustomerByInvite, fetchBindStatus } from '@common/api/customer'
+import { bindCustomerByInvite, fetchBindStatus, fetchCustomerRegisterStatus } from '@common/api/customer'
 import { useUserStore } from '@common/stores/user'
-import { applyEntryQuery } from '@common/utils/tenant'
+import { applyEntryQuery, getEntryContext } from '@common/utils/tenant'
 
 const userStore = useUserStore()
 const inviteCode = ref('')
@@ -58,6 +58,25 @@ onShow(async () => {
   if (userStore.customerId) {
     uni.redirectTo({ url: '/pages/customer/home/index' })
     return
+  }
+  const ctx = getEntryContext()
+  if (ctx.registerToken) {
+    uni.redirectTo({ url: '/pages/customer/register/index' })
+    return
+  }
+  try {
+    const status = await fetchCustomerRegisterStatus()
+    if (status.bound && status.customerId) {
+      userStore.applyCustomerBind(status.customerId, status.customerName)
+      uni.redirectTo({ url: '/pages/customer/home/index' })
+      return
+    }
+    if (status.pendingReview || status.lastRequestStatus === 'REJECTED') {
+      uni.redirectTo({ url: '/pages/customer/register/index' })
+      return
+    }
+  } catch {
+    // ignore
   }
   try {
     const status = await fetchBindStatus()

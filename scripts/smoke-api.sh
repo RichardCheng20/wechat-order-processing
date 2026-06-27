@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # 本地 API 冒烟测试（需后端 8080 已启动）
+# 可选: SMOKE_DP_PASSWORD=123456（数据平台 6 位密码，未设置时默认 123456）
 set -euo pipefail
 BASE="${API_BASE:-http://127.0.0.1:8080}"
+SMOKE_DP_PASSWORD="${SMOKE_DP_PASSWORD:-123456}"
+DP_READY=0
 
 pass=0
 fail=0
@@ -23,12 +26,74 @@ auth_get() {
   curl -s -H "Authorization: Bearer $token" "$BASE$path"
 }
 
+auth_get_dp() {
+  local token=$1 path=$2
+  curl -s -H "Authorization: Bearer $token" \
+    -H "X-Data-Platform-Password: $SMOKE_DP_PASSWORD" \
+    "$BASE$path"
+}
+
+auth_post() {
+  local token=$1 path=$2 body=$3
+  curl -s -X POST -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/json' \
+    -d "$body" "$BASE$path"
+}
+
+auth_put() {
+  local token=$1 path=$2 body=$3
+  curl -s -X PUT -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/json' \
+    -d "$body" "$BASE$path"
+}
+
 code_of() {
   python3 -c "import json,sys; print(json.load(sys.stdin).get('code','?'))" 2>/dev/null || echo "?"
 }
 
 data_field() {
   python3 -c "import json,sys; d=json.load(sys.stdin).get('data'); print('ok' if d is not None else 'null')" 2>/dev/null
+}
+
+ensure_data_platform_password() {
+  local token=$1
+  local status_resp enabled verify_resp set_resp
+
+  status_resp=$(auth_get "$token" "/api/boss/data-platform/password/status")
+  enabled=$(echo "$status_resp" | python3 -c "import json,sys; d=json.load(sys.stdin).get('data') or {}; print('1' if d.get('passwordEnabled') else '0')" 2>/dev/null || echo "0")
+
+  if [ "$enabled" = "1" ]; then
+    verify_resp=$(auth_post "$token" "/api/boss/data-platform/password/verify" "{\"password\":\"$SMOKE_DP_PASSWORD\"}")
+    if [ "$(echo "$verify_resp" | code_of)" = "0" ]; then
+      ok "数据平台密码验证"
+      DP_READY=1
+      return 0
+    fi
+    bad "数据平台密码不匹配（请设置 SMOKE_DP_PASSWORD 环境变量）"
+    return 1
+  fi
+
+  set_resp=$(auth_put "$token" "/api/boss/data-platform/password" "{\"password\":\"$SMOKE_DP_PASSWORD\"}")
+  if [ "$(echo "$set_resp" | code_of)" = "0" ]; then
+    ok "数据平台密码已初始化（冒烟用）"
+    DP_READY=1
+    return 0
+  fi
+  bad "数据平台密码初始化失败"
+  return 1
+}
+
+test_data_platform_get() {
+  local token=$1 path=$2
+  local resp c
+
+  if [ "$DP_READY" -ne 1 ]; then
+    warn_msg "跳过 $path（数据平台密码未就绪）"
+    return
+  fi
+  resp=$(auth_get_dp "$token" "$path")
+  c=$(echo "$resp" | code_of)
+  if [ "$c" = "0" ]; then ok "老板 GET $path"; else bad "老板 GET $path (code=$c)"; fi
 }
 
 echo "=== API 冒烟测试 $BASE ==="
@@ -53,20 +118,24 @@ if [ -z "$OWNER_TOKEN" ]; then
   exit 1
 fi
 
-# 老板端核心接口
+ensure_data_platform_password "$OWNER_TOKEN" || true
+
+# 老板端核心接口（无需数据平台密码）
 for path in \
   "/api/boss/orders" \
   "/api/boss/customers" \
   "/api/boss/products" \
   "/api/boss/product-categories" \
   "/api/boss/personnel" \
-  "/api/boss/dashboard" \
-  "/api/boss/stats/revenue?dateFrom=2026-06-01&dateTo=2026-06-30" \
   "/api/boss/procurement/tasks"; do
   resp=$(auth_get "$OWNER_TOKEN" "$path")
   c=$(echo "$resp" | code_of)
   if [ "$c" = "0" ]; then ok "老板 GET $path"; else bad "老板 GET $path (code=$c)"; fi
 done
+
+# 经营数据（需 X-Data-Platform-Password）
+test_data_platform_get "$OWNER_TOKEN" "/api/boss/dashboard"
+test_data_platform_get "$OWNER_TOKEN" "/api/boss/stats/revenue?dateFrom=2026-06-01&dateTo=2026-06-30"
 
 # 档口经理：业务 OK，经营数据应 403
 if [ -n "$MGR_TOKEN" ]; then

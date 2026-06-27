@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { devLogin, logout, wechatLogin, type LoginResult } from '@common/api/auth'
-import { clearEntryActivation, clearEntryInvite, getEntryContext } from '@common/utils/tenant'
+import { fetchCustomerRegisterStatus } from '@common/api/customer'
+import { clearEntryActivation, clearEntryInvite, clearEntryRegister, getEntryContext } from '@common/utils/tenant'
 import { useBossAlertStore } from './bossAlert'
 
 export type UserRole = 'CUSTOMER' | 'OWNER_ADMIN' | 'STALL_OWNER' | 'STALL_MANAGER' | 'WORKER' | 'PARTNER_ADMIN'
@@ -226,6 +227,8 @@ export const useUserStore = defineStore('user', {
       if (customerName) {
         this.customerName = customerName
       }
+      clearEntryInvite()
+      clearEntryRegister()
       const raw = uni.getStorageSync(PROFILE_KEY)
       if (raw) {
         const data = JSON.parse(raw as string) as LoginResult & { customerName?: string }
@@ -237,10 +240,45 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    async resolveCustomerHome(): Promise<string> {
+      if (this.customerId) {
+        return '/pages/customer/home/index'
+      }
+      const ctx = getEntryContext()
+      if (ctx.registerToken) {
+        return '/pages/customer/register/index'
+      }
+      if (ctx.inviteCode) {
+        return '/pages/customer/bind/index'
+      }
+      try {
+        const status = await fetchCustomerRegisterStatus()
+        if (status.bound && status.customerId) {
+          this.applyCustomerBind(status.customerId, status.customerName)
+          return '/pages/customer/home/index'
+        }
+        if (status.pendingReview || status.lastRequestStatus === 'REJECTED') {
+          return '/pages/customer/register/index'
+        }
+      } catch {
+        // ignore
+      }
+      return '/pages/customer/home/index'
+    },
+
     navigateHome() {
       if (!this.role) {
         uni.reLaunch({ url: '/pages/login/index' })
         return Promise.resolve()
+      }
+      if (this.role === 'CUSTOMER') {
+        return this.resolveCustomerHome().then((url) => new Promise<void>((resolve, reject) => {
+          uni.redirectTo({
+            url,
+            success: () => resolve(),
+            fail: (err) => reject(new Error(err.errMsg || '页面跳转失败')),
+          })
+        }))
       }
       return new Promise<void>((resolve, reject) => {
         uni.redirectTo({

@@ -1,5 +1,6 @@
 package com.vwholesale.common.exception;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.vwholesale.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.BindException;
@@ -14,6 +15,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ApiResponse<Void> handleBusiness(BusinessException ex) {
         return ApiResponse.fail(ex.getCode(), ex.getMessage());
+    }
+
+    @ExceptionHandler(NotLoginException.class)
+    public ApiResponse<Void> handleNotLogin(NotLoginException ex) {
+        return ApiResponse.fail(401, "登录已过期，请重新登录");
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class})

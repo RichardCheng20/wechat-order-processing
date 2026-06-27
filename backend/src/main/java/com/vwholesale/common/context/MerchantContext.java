@@ -1,5 +1,6 @@
 package com.vwholesale.common.context;
 
+import cn.dev33.satoken.exception.NotWebContextException;
 import cn.dev33.satoken.stp.StpUtil;
 import com.vwholesale.common.config.AppProperties;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +20,15 @@ public class MerchantContext {
         if (fromHolder != null) {
             return fromHolder;
         }
-        if (StpUtil.isLogin()) {
-            Object merchantId = StpUtil.getSession().get("merchantId");
-            if (merchantId != null) {
-                return Long.parseLong(merchantId.toString());
+        try {
+            if (StpUtil.isLogin()) {
+                Object merchantId = StpUtil.getSession().get("merchantId");
+                if (merchantId != null) {
+                    return Long.parseLong(merchantId.toString());
+                }
             }
+        } catch (NotWebContextException ignored) {
+            // MQ / 定时任务等非 Web 线程：回退默认商户
         }
         return appProperties.getMerchant().getDefaultId();
     }

@@ -54,6 +54,12 @@
           "style": {
             "navigationBarTitleText": "绑定客户"
           }
+        },
+        {
+          "path": "register/index",
+          "style": {
+            "navigationBarTitleText": "申请成为客户"
+          }
         }
       ]
     },
@@ -365,6 +371,12 @@
           "style": {
             "navigationBarTitleText": "客户管理",
             "disableScroll": true
+          }
+        },
+        {
+          "path": "customers/pending/index",
+          "style": {
+            "navigationBarTitleText": "待审核客户"
           }
         },
         {

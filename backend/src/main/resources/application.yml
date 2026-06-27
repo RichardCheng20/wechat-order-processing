@@ -54,4 +54,6 @@ app:
   wechat:
     app-id: wx3988c400ac1e395b
     app-secret: ${WECHAT_APP_SECRET:}
+    mini-program-name: 蔬菜批发
+    env-version: ${WECHAT_ENV_VERSION:release}
     order-notify-template-id: ${WECHAT_ORDER_NOTIFY_TEMPLATE_ID:}

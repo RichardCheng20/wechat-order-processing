@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -24,6 +25,8 @@ public class WechatClient {
             "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}";
     private static final String SUBSCRIBE_SEND_URL =
             "https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token={accessToken}";
+    private static final String WXACODE_UNLIMIT_URL =
+            "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={accessToken}";
 
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
@@ -125,5 +128,46 @@ public class WechatClient {
             log.error("parse subscribe send response failed", ex);
             throw BusinessException.of(400, "发送微信订阅消息失败");
         }
+    }
+
+    /** 生成小程序启动页太阳码；scene 最长 32 字符，如 m=1,r=ABCD1234 */
+    public byte[] createLaunchQrCode(String scene) {
+        if (!StringUtils.hasText(scene) || scene.length() > 32) {
+            throw BusinessException.of(400, "二维码场景参数无效");
+        }
+        String accessToken = getAccessToken();
+        AppProperties.Wechat wechat = appProperties.getWechat();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("page", "pages/launch/index");
+        payload.put("scene", scene);
+        payload.put("check_path", false);
+        payload.put("width", 430);
+        payload.put("auto_color", true);
+        if (StringUtils.hasText(wechat.getEnvVersion())) {
+            payload.put("env_version", wechat.getEnvVersion().trim());
+        }
+        byte[] body = restClient.post()
+                .uri(WXACODE_UNLIMIT_URL, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(byte[].class);
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        if (body[0] == '{') {
+            try {
+                JsonNode node = objectMapper.readTree(body);
+                int errCode = node.path("errcode").asInt(0);
+                if (errCode != 0) {
+                    log.warn("create wxacode failed: {}", node.path("errmsg").asText());
+                    return null;
+                }
+            } catch (Exception ex) {
+                log.warn("create wxacode parse failed", ex);
+                return null;
+            }
+        }
+        return body;
     }
 }

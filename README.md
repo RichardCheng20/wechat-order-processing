@@ -102,3 +102,6 @@ npm run build:h5
 - [PRD](docs/vegetable-wholesale-miniapp-prd.md)
 - [技术架构](docs/technical-architecture.md)
 - [开工清单](docs/pre-development-checklist.md)
+- [腾讯云上线分步操作指南](docs/腾讯云上线分步操作指南.md) — **按步骤部署到服务器（推荐先看）**
+- [开发联调与生产部署指南](docs/开发联调与生产部署指南.md) — 日常 `deploy-prod.sh`、SSH 隧道联调
+- [腾讯云上云部署指南](docs/腾讯云上云部署指南.md) — 架构、资源采购、完整配置说明

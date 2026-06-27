@@ -99,7 +99,9 @@
             </view>
             <view class="finance-cell">
               <text class="finance-label">优惠</text>
-              <text class="finance-value muted">—</text>
+              <text class="finance-value" :class="{ muted: orderDiscountAmount == null }">
+                {{ orderDiscountAmount != null ? formatMoney(orderDiscountAmount) : '—' }}
+              </text>
             </view>
             <view class="finance-cell">
               <text class="finance-label">已收</text>
@@ -372,6 +374,14 @@ const isFullyPicked = computed(() => {
   const total = o.itemCount || itemKinds.value
   const picked = o.pickedItemCount ?? countPickedFromItems()
   return total > 0 && picked >= total
+})
+
+/** 收款时填写的优惠 = 销售金额 - 应收 */
+const orderDiscountAmount = computed(() => {
+  const o = order.value
+  if (o?.amount == null || o.receivableAmount == null) return null
+  const discount = Number(o.amount) - Number(o.receivableAmount)
+  return discount > 0.005 ? discount : null
 })
 
 const sourceImageSrc = computed(() => resolveMediaUrl(order.value?.sourceImageUrl))

@@ -37,6 +37,40 @@ api() {
   fi
 }
 
+api_dp() {
+  local method="$1" path="$2" data="${3:-}"
+  local dp="${SMOKE_DP_PASSWORD:-123456}"
+  if [[ -n "$data" ]]; then
+    curl -s -w "\n%{http_code}" -X "$method" "${BASE_URL}${path}" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "X-Data-Platform-Password: $dp" \
+      -d "$data"
+  else
+    curl -s -w "\n%{http_code}" -X "$method" "${BASE_URL}${path}" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "X-Data-Platform-Password: $dp"
+  fi
+}
+
+ensure_data_platform_password() {
+  local dp="${SMOKE_DP_PASSWORD:-123456}"
+  split_response "$(api GET /api/boss/data-platform/password/status)"
+  local enabled
+  enabled=$(json_get "$BODY" "d.get('data', {}).get('passwordEnabled', False)")
+  if [[ "$enabled" == "True" ]]; then
+    split_response "$(api POST /api/boss/data-platform/password/verify "{\"password\":\"$dp\"}")"
+    [[ "$HTTP_CODE" == "200" && "$(json_get "$BODY" "d.get('code', -1)")" == "0" ]] \
+      && record_pass "数据平台密码验证" \
+      || record_fail "数据平台密码验证" "请设置 SMOKE_DP_PASSWORD"
+    return
+  fi
+  split_response "$(api PUT /api/boss/data-platform/password "{\"password\":\"$dp\"}")"
+  [[ "$HTTP_CODE" == "200" && "$(json_get "$BODY" "d.get('code', -1)")" == "0" ]] \
+    && record_pass "数据平台密码初始化" \
+    || record_fail "数据平台密码初始化" "code=$HTTP_CODE"
+}
+
 split_response() {
   HTTP_CODE=$(echo "$1" | tail -1)
   BODY=$(echo "$1" | sed '$d')
@@ -50,6 +84,8 @@ split_response "$LOGIN_RAW"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "dev-login" || record_fail "dev-login" "code=$HTTP_CODE"
 TOKEN=$(json_get "$BODY" "d['data']['token']")
 [[ -n "$TOKEN" ]] || { log "无 token，退出"; exit 1; }
+
+ensure_data_platform_password
 
 TODAY=$(date +%Y-%m-%d)
 FROM7=$(python3 -c "from datetime import date,timedelta; print((date.today()-timedelta(days=6)).isoformat())")
@@ -107,20 +143,20 @@ split_response "$(api DELETE /api/boss/suppliers/${SID2})"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "无付款可删供应商" || record_fail "无付款可删供应商" "code=$HTTP_CODE"
 
 log "=== 5. 报表 ==="
-split_response "$(api GET "/api/boss/stats/supplier-report?dateFrom=${FROM7}&dateTo=${TODAY}")"
+split_response "$(api_dp GET "/api/boss/stats/supplier-report?dateFrom=${FROM7}&dateTo=${TODAY}")"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "供应商报表接口" || record_fail "供应商报表接口" "code=$HTTP_CODE body=${BODY:0:80}"
 PAID=$(json_get "$BODY" "d['data']['summary']['paidAmount']")
 [[ -n "$PAID" ]] && record_pass "供应商报表汇总" || record_fail "供应商报表汇总" "empty"
 
-split_response "$(api GET "/api/boss/stats/inventory-report?dateFrom=${FROM7}&dateTo=${TODAY}&dateType=DELIVERY")"
+split_response "$(api_dp GET "/api/boss/stats/inventory-report?dateFrom=${FROM7}&dateTo=${TODAY}&dateType=DELIVERY")"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "库存报表接口" || record_fail "库存报表接口" "code=$HTTP_CODE body=${BODY:0:80}"
 STOCK=$(json_get "$BODY" "d['data']['summary'].get('productCount', 0)")
 [[ -n "$STOCK" ]] && record_pass "库存报表汇总" || record_fail "库存报表汇总" "empty"
 
-split_response "$(api GET "/api/boss/stats/customer-report?dateFrom=${FROM7}&dateTo=${TODAY}")"
+split_response "$(api_dp GET "/api/boss/stats/customer-report?dateFrom=${FROM7}&dateTo=${TODAY}")"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "客户报表" || record_fail "客户报表" "code=$HTTP_CODE"
 
-split_response "$(api GET /api/boss/dashboard)"
+split_response "$(api_dp GET /api/boss/dashboard)"
 [[ "$HTTP_CODE" == "200" ]] && record_pass "经营仪表盘" || record_fail "经营仪表盘" "code=$HTTP_CODE"
 
 log "=== 6. 采购任务 ==="
